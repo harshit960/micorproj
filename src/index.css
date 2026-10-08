@@ -483,3 +483,50 @@ h3 {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- pwa ---------- */
+.install-card {
+  margin: 0 16px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--accent-soft);
+}
+.install-card img { width: 40px; height: 40px; border-radius: 11px; flex: none; }
+.install-card .btn.tiny { background: var(--accent); color: #fff; }
+.icon-btn.small { width: 28px; height: 28px; flex: none; }
+.install-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  font-size: 14px;
+}
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 88px);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 16px;
+  border-radius: 16px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+  white-space: nowrap;
+  animation: fade 0.25s ease;
+}
+/* Installed app: no rubber-band overscroll, no text-select on long-press of controls. */
+@media (display-mode: standalone) {
+  html, body { overscroll-behavior-y: none; }
+  button, .tabbar { -webkit-user-select: none; user-select: none; }
+}

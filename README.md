@@ -1,6 +1,6 @@
 # Kosh — money, savings & loans tracker
 
-Mobile-first PWA for tracking income/expenses, savings goals and money lent/borrowed.
+Installable, offline-capable PWA for tracking income/expenses, savings goals and money lent/borrowed.
 
 - **Guest mode** — data stays in `localStorage` on the device.
 - **Google sign-in (optional)** — data syncs to Firestore (`kosh_users/{uid}/…`) on the `hangout-c0d41` Firebase project. Guest data is migrated to the cloud on first sign-in.

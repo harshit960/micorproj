@@ -35,11 +35,11 @@ function useSubmit(fn: () => Promise<void>, done: () => void) {
   return { busy, err, submit };
 }
 
-export function TxForm({ initial, onDone }: { initial?: Transaction; onDone: () => void }) {
+export function TxForm({ initial, defaultType, onDone }: { initial?: Transaction; defaultType?: TxType; onDone: () => void }) {
   const { store } = useData();
-  const [type, setType] = useState<TxType>(initial?.type ?? "expense");
+  const [type, setType] = useState<TxType>(initial?.type ?? defaultType ?? "expense");
   const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
-  const [category, setCategory] = useState(initial?.category ?? "Food");
+  const [category, setCategory] = useState(initial?.category ?? (type === "income" ? "Salary" : "Food"));
   const [note, setNote] = useState(initial?.note ?? "");
   const [date, setDate] = useState(initial?.date ?? today());
   const cats = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;

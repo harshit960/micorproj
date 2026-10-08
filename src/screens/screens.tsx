@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { useData } from "../lib/data";
 import { daysUntil, money, monthKey, prettyDate, prettyMonth, today } from "../lib/format";
-import { categoryEmoji, EXPENSE_CATEGORIES, goalSaved, loanOutstanding, loanRepaid, sum, type Goal, type Loan, type Transaction } from "../lib/types";
+import { categoryEmoji, EXPENSE_CATEGORIES, goalSaved, loanOutstanding, loanRepaid, sum, type Goal, type Loan, type Transaction, type TxType } from "../lib/types";
 import { Empty, Icon, Progress, Segmented } from "../components/ui";
 
 export type Open =
-  | { kind: "tx"; item?: Transaction }
+  | { kind: "tx"; item?: Transaction; type?: TxType }
   | { kind: "goal"; item?: Goal }
   | { kind: "contribute"; item: Goal }
   | { kind: "loan"; item?: Loan }

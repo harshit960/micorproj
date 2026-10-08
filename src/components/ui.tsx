@@ -98,6 +98,7 @@ const PATHS: Record<string, string> = {
   up: "M12 19V5M5 12l7-7 7 7",
   down: "M12 5v14M19 12l-7 7-7-7",
   chevron: "M9 6l6 6-6 6",
+  download: "M12 4v11M7 10l5 5 5-5M5 20h14",
   google: "",
 };
 

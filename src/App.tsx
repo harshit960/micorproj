@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useData } from "./lib/data";
 import { CURRENCIES, getCurrency, setCurrency } from "./lib/format";
+import { usePWA } from "./lib/pwa";
 import { ContributeForm, GoalForm, LoanForm, RepayForm, TxForm } from "./components/forms";
 import { Icon, Sheet } from "./components/ui";
 import { ActivityScreen, HomeScreen, LoansScreen, SavingsScreen, type Open, type Tab } from "./screens/screens";
@@ -65,6 +66,7 @@ function Settings({ onDone }: { onDone: () => void }) {
           ))}
         </select>
       </label>
+      <InstallSection />
       {user ? (
         <button className="btn ghost" onClick={() => logOut().then(onDone)}>
           Sign out
@@ -79,6 +81,89 @@ function Settings({ onDone }: { onDone: () => void }) {
           </button>
         </>
       )}
+    </div>
+  );
+}
+
+function InstallSection() {
+  const pwa = usePWA();
+  if (pwa.installed) return <div className="sync-pill cloud">📲 Installed as an app</div>;
+  if (pwa.canInstall)
+    return (
+      <button className="btn primary" onClick={pwa.install}>
+        <Icon name="download" /> Install Kosh app
+      </button>
+    );
+  if (pwa.showIOSHint)
+    return (
+      <div className="install-hint">
+        <strong>Install on iPhone</strong>
+        <span>
+          Tap <ShareGlyph /> <b>Share</b> in Safari, then <b>Add to Home Screen</b>.
+        </span>
+      </div>
+    );
+  return null;
+}
+
+const ShareGlyph = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ verticalAlign: "-3px" }}>
+    <path d="M12 3v12M8 7l4-4 4 4M5 12v8h14v-8" />
+  </svg>
+);
+
+function InstallCard() {
+  const pwa = usePWA();
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem("kosh:install-dismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  if (hidden || pwa.installed || !(pwa.canInstall || pwa.showIOSHint)) return null;
+  const dismiss = () => {
+    setHidden(true);
+    try {
+      localStorage.setItem("kosh:install-dismissed", "1");
+    } catch {
+      /* ignore */
+    }
+  };
+  return (
+    <div className="install-card">
+      <img src="/icons/icon-192.png" alt="" />
+      <div className="row-main">
+        <strong>Get the Kosh app</strong>
+        <span className="small muted">
+          {pwa.canInstall ? "Works offline, opens full-screen." : (
+            <>
+              Tap <ShareGlyph /> then <b>Add to Home Screen</b>
+            </>
+          )}
+        </span>
+      </div>
+      {pwa.canInstall && (
+        <button className="btn tiny" onClick={pwa.install}>
+          Install
+        </button>
+      )}
+      <button className="icon-btn small" onClick={dismiss} aria-label="Dismiss">
+        <Icon name="close" size={16} />
+      </button>
+    </div>
+  );
+}
+
+function UpdateToast() {
+  const pwa = usePWA();
+  if (!pwa.updateReady) return null;
+  return (
+    <div className="toast" role="status">
+      <span>A new version is ready</span>
+      <button className="btn tiny" onClick={pwa.applyUpdate}>
+        Reload
+      </button>
     </div>
   );
 }
@@ -105,6 +190,20 @@ export default function App() {
   const [settings, setSettings] = useState(false);
   const close = useCallback(() => setSheet(null), []);
   const closeSettings = useCallback(() => setSettings(false), []);
+
+  // Home-screen shortcuts (manifest "shortcuts") open straight into a form.
+  useEffect(() => {
+    if (!ready || (!user && !guest)) return;
+    const params = new URLSearchParams(location.search);
+    const add = params.get("add");
+    if (!add) return;
+    if (add === "expense" || add === "income") setSheet({ kind: "tx", type: add });
+    else if (add === "loan") {
+      setTab("loans");
+      setSheet({ kind: "loan" });
+    }
+    history.replaceState(null, "", location.pathname);
+  }, [ready, user, guest]);
 
   if (!ready)
     return (
@@ -136,6 +235,8 @@ export default function App() {
       </header>
 
       {error && <div className="banner">{error}</div>}
+      {tab === "home" && <InstallCard />}
+      <UpdateToast />
 
       <main>
         {tab === "home" && <HomeScreen open={setSheet} go={setTab} />}
@@ -158,7 +259,7 @@ export default function App() {
       </nav>
 
       <Sheet open={!!sheet} onClose={close} title={sheet ? TITLES[sheet.kind](sheet) : ""}>
-        {sheet?.kind === "tx" && <TxForm key={sheet.item?.id ?? "new"} initial={sheet.item} onDone={close} />}
+        {sheet?.kind === "tx" && <TxForm key={sheet.item?.id ?? "new"} initial={sheet.item} defaultType={sheet.type} onDone={close} />}
         {sheet?.kind === "goal" && <GoalForm key={sheet.item?.id ?? "new"} initial={sheet.item} onDone={close} />}
         {sheet?.kind === "contribute" && <ContributeForm goal={sheet.item} onDone={close} />}
         {sheet?.kind === "loan" && <LoanForm key={sheet.item?.id ?? "new"} initial={sheet.item} onDone={close} />}

@@ -4,6 +4,7 @@ import { allTags, balanceOf, goalEta, goalSaved, monthTotals, shiftMonth, spendB
 import { AiCard, PaceCard } from "./plan";
 import { CardChip } from "./cards";
 import { ForecastCard, GoalPlanCard, SafetyCard, TargetCard } from "./forecast";
+import { monthsBetween, requiredMonthly } from "../lib/forecast";
 import { daysUntil, money, monthKey, prettyDate, prettyMonth, today } from "../lib/format";
 import { usePrefs } from "../lib/prefs";
 import {
@@ -521,7 +522,7 @@ export function InsightsScreen({ open }: { open: Nav }) {
 // ---------- Savings ----------
 
 export function SavingsScreen({ open }: { open: Nav }) {
-  const { goals, transactions } = useData();
+  const { goals, transactions, recurring } = useData();
   const total = goals.reduce((s, g) => s + goalSaved(g, transactions), 0);
   const target = sum(goals.map((g) => ({ amount: g.target })));
   const sorted = [...goals].sort((a, b) => goalSaved(a, transactions) / a.target - goalSaved(b, transactions) / b.target);
@@ -546,7 +547,7 @@ export function SavingsScreen({ open }: { open: Nav }) {
           <Icon name="arrow" size={18} /> Move money to savings
         </button>
       )}
-      <ForecastCard />
+      <ForecastCard open={open} />
       <SafetyCard />
       <GoalPlanCard open={open} />
       {goals.length === 0 && <Empty emoji="🐷" title="No savings goals" text="Create a goal — a trip, a gadget, an emergency fund — then move money into it from your balance." />}
@@ -556,8 +557,9 @@ export function SavingsScreen({ open }: { open: Nav }) {
           const pct = s / g.target;
           const done = pct >= 1;
           const d = g.deadline ? daysUntil(g.deadline) : null;
-          const perMonth = d && d > 0 && !done ? (g.target - s) / Math.max(1, d / 30) : null;
-          const eta = done ? null : goalEta(g, transactions, today());
+          // Same month-based maths as the Goal plan card, so both show the same number.
+          const perMonth = d && d > 0 && !done ? requiredMonthly(g.target, s, Math.max(1, monthsBetween(today().slice(0, 7), g.deadline!.slice(0, 7)))) : null;
+          const eta = done ? null : goalEta(g, transactions, today(), recurring);
           const late = !!(eta && !eta.done && g.deadline && (eta.months == null || eta.month! > g.deadline.slice(0, 7)));
           return (
             <article key={g.id} className={`goal ${done ? "done" : ""}`}>
@@ -583,7 +585,9 @@ export function SavingsScreen({ open }: { open: Nav }) {
                         : `Need ${money(perMonth ?? 0, { compact: true })}/mo for ${d}d`}
                   {!done && eta && !eta.done && (
                     <span className={late ? "bad-text" : ""}>
-                      {eta.months == null ? "No savings in the last 3 months" : `At your pace: ${prettyMonth(eta.month!)}${late ? " ⚠ after target" : ""}`}
+                      {eta.months == null
+                        ? "No savings in the last 3 months"
+                        : `${eta.source === "scheduled" ? `🐷 ${money(eta.rate, { compact: true })}/mo scheduled → done` : "At your pace:"} ${prettyMonth(eta.month!)}${late ? " ⚠ after target" : ""}`}
                     </span>
                   )}
                 </span>
@@ -595,7 +599,7 @@ export function SavingsScreen({ open }: { open: Nav }) {
           );
         })}
       </div>
-      <TargetCard />
+      <TargetCard open={open} />
     </div>
   );
 }

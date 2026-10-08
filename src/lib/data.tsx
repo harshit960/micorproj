@@ -153,23 +153,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!authReady || running.current) return;
     const t = today();
-    const due = recurring.filter((r) => r.active && r.nextDate <= t);
+    // Scheduled savings wait until their goal has loaded (and never post into a deleted goal).
+    const due = recurring.filter((r) => r.active && r.nextDate <= t && (r.type !== "transfer" || goals.some((g) => g.id === r.goalId)));
     if (!due.length) return;
     running.current = true;
     (async () => {
       for (const r of due) {
         let next = r.nextDate;
         for (let i = 0; next <= t && i < 120; i++) {
-          await store.set("transactions", `rec_${r.id}_${next}`, {
-            type: r.type,
-            amount: r.amount,
-            category: r.category,
-            note: r.note,
-            tags: r.tags,
-            recurringId: r.id,
-            date: next,
-            createdAt: Date.now(),
-          });
+          await store.set(
+            "transactions",
+            `rec_${r.id}_${next}`,
+            r.type === "transfer"
+              ? { type: "transfer", amount: r.amount, category: "Savings", goalId: r.goalId, note: r.note, recurringId: r.id, date: next, createdAt: Date.now() }
+              : { type: r.type, amount: r.amount, category: r.category, note: r.note, tags: r.tags, recurringId: r.id, date: next, createdAt: Date.now() },
+          );
           next = addPeriod(next, r.freq, r.anchorDay);
         }
         await store.update("recurring", r.id, { nextDate: next });
@@ -177,7 +175,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     })()
       .catch((e) => setError("Couldn't post recurring items: " + (e as Error).message))
       .finally(() => (running.current = false));
-  }, [recurring, store, authReady]);
+  }, [recurring, goals, store, authReady]);
 
   const value: DataCtx = {
     ready: authReady,

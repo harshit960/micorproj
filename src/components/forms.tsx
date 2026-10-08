@@ -1,15 +1,16 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useData } from "../lib/data";
-import { addPeriod, allTags, balanceOf, goalSaved } from "../lib/calc";
+import { addPeriod, allTags, balanceOf, goalSaved, PER_MONTH } from "../lib/calc";
+import { newId } from "../lib/store";
 import { money, today } from "../lib/format";
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
   loanOutstanding,
   type Budget,
-  type FlowType,
   type Frequency,
   type Recurring,
+  type RecurringType,
   type Goal,
   type Loan,
   type LoanDirection,
@@ -252,7 +253,7 @@ export function TxForm({
 const GOAL_EMOJIS = ["🎯", "🏝️", "🚗", "🏠", "💻", "📱", "🎓", "💍", "🛟", "🎁", "✈️", "🏍️"];
 
 export function GoalForm({ initial, onDone }: { initial?: Goal; onDone: () => void }) {
-  const { store, transactions } = useData();
+  const { store, transactions, recurring } = useData();
   const [name, setName] = useState(initial?.name ?? "");
   const [emoji, setEmoji] = useState(initial?.emoji ?? "🎯");
   const [target, setTarget] = useState(initial ? String(initial.target) : "");
@@ -268,10 +269,15 @@ export function GoalForm({ initial, onDone }: { initial?: Goal; onDone: () => vo
     if (!initial) return;
     const moves = transactions.filter((t) => t.type === "transfer" && t.goalId === initial.id);
     const fromBalance = moves.reduce((s, t) => s + t.amount, 0);
+    const scheduled = recurring.filter((r) => r.goalId === initial.id).length;
     const msg =
-      `Delete "${initial.name}"?` + (fromBalance > 0 ? `\n\n${money(fromBalance)} you moved in from your balance will go back to your balance.` : "");
+      `Delete "${initial.name}"?` +
+      (fromBalance > 0 ? `\n\n${money(fromBalance)} you moved in from your balance will go back to your balance.` : "") +
+      (scheduled ? `\n\nIts ${scheduled} scheduled saving${scheduled > 1 ? "s" : ""} will stop.` : "");
     if (!confirm(msg)) return;
     await Promise.all(moves.map((t) => store.remove("transactions", t.id)));
+    // Stop any scheduled savings into this goal.
+    await Promise.all(recurring.filter((r) => r.goalId === initial.id).map((r) => store.remove("recurring", r.id)));
     await store.remove("goals", initial.id);
     onDone();
   };
@@ -491,7 +497,7 @@ export function RepayForm({ loan, onDone }: { loan: Loan; onDone: () => void }) 
 
 export const FREQ_LABEL: Record<Frequency, string> = { weekly: "Every week", monthly: "Every month", quarterly: "Every 3 months", yearly: "Every year" };
 
-export type RecurringPreset = Partial<Pick<Recurring, "type" | "amount" | "category" | "note" | "freq">>;
+export type RecurringPreset = Partial<Pick<Recurring, "type" | "amount" | "category" | "note" | "freq" | "goalId">>;
 
 export const RECURRING_TEMPLATES: (RecurringPreset & { emoji: string })[] = [
   { emoji: "💼", type: "income", category: "Salary", note: "Salary", freq: "monthly" },
@@ -502,33 +508,47 @@ export const RECURRING_TEMPLATES: (RecurringPreset & { emoji: string })[] = [
   { emoji: "🎬", type: "expense", category: "Subscriptions", note: "Netflix", freq: "monthly" },
   { emoji: "🎵", type: "expense", category: "Subscriptions", note: "Spotify", freq: "monthly" },
   { emoji: "🏦", type: "expense", category: "EMI", note: "Loan EMI", freq: "monthly" },
-  { emoji: "📈", type: "expense", category: "Investments", note: "SIP", freq: "monthly" },
+  { emoji: "🐷", type: "transfer", category: "Savings", note: "Monthly savings", freq: "monthly" },
+  { emoji: "📈", type: "transfer", category: "Savings", note: "SIP / mutual fund", freq: "monthly" },
+  { emoji: "🛟", type: "transfer", category: "Savings", note: "Emergency fund", freq: "monthly" },
   { emoji: "🛡️", type: "expense", category: "Insurance", note: "Health insurance", freq: "yearly" },
   { emoji: "🏋️", type: "expense", category: "Health", note: "Gym", freq: "monthly" },
   { emoji: "💻", type: "income", category: "Freelance", note: "Freelance retainer", freq: "monthly" },
 ];
 
 export function RecurringForm({ initial, preset, onDone }: { initial?: Recurring; preset?: RecurringPreset; onDone: () => void }) {
-  const { store, transactions } = useData();
+  const { store, transactions, goals } = useData();
   const src = initial ?? preset ?? {};
-  const [type, setType] = useState<FlowType>(src.type ?? "expense");
-  const [amount, setAmount] = useState(src.amount ? String(src.amount) : "");
+  const [type, setType] = useState<RecurringType>(src.type ?? "expense");
+  const [amount, setAmount] = useState(src.amount ? String(Math.round(src.amount * 100) / 100) : "");
   const [name, setName] = useState(src.note ?? "");
   const [category, setCategory] = useState(src.category ?? (type === "income" ? "Salary" : "Bills"));
+  const [goalId, setGoalId] = useState(src.goalId ?? goals[0]?.id ?? "");
+  const [newGoal, setNewGoal] = useState({ name: preset?.note && preset.type === "transfer" ? preset.note : "", target: "" });
   const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
   const [freq, setFreq] = useState<Frequency>(src.freq ?? "monthly");
   const [next, setNext] = useState(initial?.nextDate ?? today());
   const tagSuggestions = useMemo(() => allTags(transactions), [transactions]);
   const cats = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
   const postsNow = next <= today() && (!initial || initial.active);
+  const saving = type === "transfer";
+  const creatingGoal = saving && (!goals.length || goalId === "__new");
+  const goal = goals.find((g) => g.id === goalId);
 
   const { busy, err, submit } = useSubmit(async () => {
+    let gid = goalId;
+    if (creatingGoal) {
+      if (!newGoal.name.trim() || !valid(newGoal.target)) throw new Error("Give the new goal a name and target");
+      gid = newId();
+      await store.set("goals", gid, { name: newGoal.name.trim(), emoji: "🐷", target: parse(newGoal.target), contributions: [], createdAt: Date.now() });
+    }
     const data = {
       type,
       amount: parse(amount),
-      category,
-      note: name.trim() || undefined,
-      tags: tags.length ? tags : undefined,
+      category: saving ? "Savings" : category,
+      goalId: saving ? gid : undefined,
+      note: name.trim() || (saving ? `Savings → ${creatingGoal ? newGoal.name.trim() : (goal?.name ?? "goal")}` : undefined),
+      tags: !saving && tags.length ? tags : undefined,
       freq,
       nextDate: next,
       // Keep the original day-of-month (e.g. 31st) unless the user actually moved the date.
@@ -544,24 +564,61 @@ export function RecurringForm({ initial, preset, onDone }: { initial?: Recurring
         value={type}
         onChange={(t) => {
           setType(t);
-          setCategory(t === "income" ? "Salary" : "Bills");
+          if (t !== "transfer") setCategory(t === "income" ? "Salary" : "Bills");
         }}
         options={[
-          { value: "expense", label: "Expense / bill" },
+          { value: "expense", label: "Expense" },
           { value: "income", label: "Income" },
+          { value: "transfer", label: "Savings" },
         ]}
       />
       <AmountField value={amount} onChange={setAmount} autoFocus={!initial} />
-      <Field label="Name">
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "income" ? "Salary, rent received…" : "Netflix, rent, EMI…"} maxLength={40} />
-      </Field>
-      <div className="chips">
-        {cats.map((c) => (
-          <button type="button" key={c.name} className={`chip ${category === c.name ? "on" : ""}`} onClick={() => setCategory(c.name)}>
-            <span>{c.emoji}</span> {c.name}
-          </button>
-        ))}
-      </div>
+      {saving ? (
+        <>
+          {goals.length > 0 && (
+            <>
+              <GoalPicker goals={goals} value={goalId} onChange={setGoalId} txs={transactions} />
+              <button type="button" className={`goal-chip new ${goalId === "__new" ? "on" : ""}`} onClick={() => setGoalId("__new")}>
+                <span className="goal-chip-emoji">➕</span>
+                <span className="row-main">
+                  <span className="row-title">New goal</span>
+                </span>
+              </button>
+            </>
+          )}
+          {creatingGoal && (
+            <div className="row2">
+              <Field label="New goal">
+                <input value={newGoal.name} onChange={(e) => setNewGoal({ ...newGoal, name: e.target.value })} placeholder="Emergency fund" maxLength={40} />
+              </Field>
+              <Field label="Target">
+                <input
+                  inputMode="decimal"
+                  value={newGoal.target}
+                  onChange={(e) => setNewGoal({ ...newGoal, target: e.target.value.replace(/[^0-9.]/g, "") })}
+                  placeholder="1,00,000"
+                />
+              </Field>
+            </div>
+          )}
+          <Field label="Name (optional)">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Monthly savings, SIP…" maxLength={40} />
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label="Name">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "income" ? "Salary, rent received…" : "Netflix, rent, EMI…"} maxLength={40} />
+          </Field>
+          <div className="chips">
+            {cats.map((c) => (
+              <button type="button" key={c.name} className={`chip ${category === c.name ? "on" : ""}`} onClick={() => setCategory(c.name)}>
+                <span>{c.emoji}</span> {c.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       <div className="row2">
         <Field label="Repeats">
           <select value={freq} onChange={(e) => setFreq(e.target.value as Frequency)}>
@@ -576,13 +633,21 @@ export function RecurringForm({ initial, preset, onDone }: { initial?: Recurring
           <input type="date" value={next} onChange={(e) => setNext(e.target.value)} required />
         </Field>
       </div>
-      <Field label="Tags">
-        <TagInput value={tags} onChange={setTags} suggestions={tagSuggestions} />
-      </Field>
+      {!saving && (
+        <Field label="Tags">
+          <TagInput value={tags} onChange={setTags} suggestions={tagSuggestions} />
+        </Field>
+      )}
+      {saving && valid(amount) && (
+        <p className="hint">
+          On each date, <b>{money(parse(amount))}</b> moves from your balance into <b>{creatingGoal ? newGoal.name || "the new goal" : (goal?.name ?? "the goal")}</b>
+          {freq !== "monthly" && <> (≈{money(parse(amount) * PER_MONTH[freq], { compact: true })}/mo)</>}. It's counted in your savings forecast.
+        </p>
+      )}
       {postsNow && <p className="hint">Starts today or earlier, so it will be added to Activity right away (once per past date).</p>}
       {err && <p className="form-error">{err}</p>}
-      <button className={`btn primary ${type === "income" ? "good" : ""}`} disabled={!valid(amount) || busy}>
-        {initial ? "Save changes" : `Add recurring ${type === "income" ? "income" : "expense"}`}
+      <button className={`btn primary ${type === "income" ? "good" : ""}`} disabled={!valid(amount) || busy || (saving && !creatingGoal && !goal)}>
+        {initial ? "Save changes" : `Add recurring ${type === "income" ? "income" : saving ? "saving" : "expense"}`}
       </button>
       {initial && (
         <div className="row2">

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useData } from "../lib/data";
-import { addDays, monthlyEquivalent, upcoming } from "../lib/calc";
+import { addDays, monthlyEquivalent, plannedSavings, upcoming } from "../lib/calc";
 import { daysUntil, money, prettyDate, today } from "../lib/format";
-import { categoryEmoji, type Recurring } from "../lib/types";
+import { categoryEmoji, type Goal, type Recurring } from "../lib/types";
 import {
   FREQ_LABEL,
   RECURRING_TEMPLATES,
@@ -11,6 +11,7 @@ import {
 import { Empty, Segmented } from "../components/ui";
 
 const label = (r: Recurring) => r.note || r.category;
+const goalOf = (r: Recurring, goals: Goal[]) => goals.find((g) => g.id === r.goalId);
 const when = (date: string) => {
   const d = daysUntil(date);
   return d === 0
@@ -23,15 +24,18 @@ const when = (date: string) => {
 };
 
 function RuleRow({ r, onClick }: { r: Recurring; onClick: () => void }) {
+  const { goals } = useData();
   const perMonth = monthlyEquivalent(r);
+  const goal = r.type === "transfer" ? goalOf(r, goals) : undefined;
   return (
     <button className={`row ${r.active ? "" : "paused"}`} onClick={onClick}>
       <span className={`row-icon ${r.type}`}>
-        {categoryEmoji(r.type, r.category)}
+        {goal?.emoji ?? categoryEmoji(r.type, r.category)}
       </span>
       <span className="row-main">
         <span className="row-title">{label(r)}</span>
         <span className="row-sub">
+          {r.type === "transfer" && (goal ? `→ ${goal.name} · ` : "⚠ goal deleted · ")}
           {FREQ_LABEL[r.freq]} ·{" "}
           {r.active ? `next ${prettyDate(r.nextDate)}` : "⏸ paused"}
           {r.freq !== "monthly" && r.active && (
@@ -54,7 +58,8 @@ export function RecurringScreen({
   onAdd: (preset?: RecurringPreset) => void;
 }) {
   const { recurring } = useData();
-  const [view, setView] = useState<"all" | "expense" | "income">("all");
+  const [view, setView] = useState<"all" | "expense" | "income" | "transfer">("all");
+  const savingsMonthly = plannedSavings(recurring);
   const active = recurring.filter((r) => r.active);
   const inMonthly = active
     .filter((r) => r.type === "income")
@@ -68,6 +73,9 @@ export function RecurringScreen({
   const soon = upcoming(recurring, t, until);
   const dueOut = soon
     .filter((u) => u.rule.type === "expense")
+    .reduce((s, u) => s + u.rule.amount, 0);
+  const dueSave = soon
+    .filter((u) => u.rule.type === "transfer")
     .reduce((s, u) => s + u.rule.amount, 0);
   const dueIn = soon
     .filter((u) => u.rule.type === "income")
@@ -90,9 +98,11 @@ export function RecurringScreen({
 
       {recurring.length > 0 && (
         <section className="hero small-hero">
-          <span className="hero-label">Left each month after fixed costs</span>
-          <span className="hero-value">{money(inMonthly - outMonthly)}</span>
-          <div className="hero-split">
+          <span className="hero-label">
+            Left each month after fixed costs{savingsMonthly > 0 ? " & savings" : ""}
+          </span>
+          <span className="hero-value">{money(inMonthly - outMonthly - savingsMonthly)}</span>
+          <div className={`hero-split ${savingsMonthly > 0 ? "three" : ""}`}>
             <div>
               <span className="dot good" /> Fixed income
               <strong>{money(inMonthly, { compact: true })}/mo</strong>
@@ -101,11 +111,18 @@ export function RecurringScreen({
               <span className="dot bad" /> Fixed costs
               <strong>{money(outMonthly, { compact: true })}/mo</strong>
             </div>
+            {savingsMonthly > 0 && (
+              <div>
+                <span className="dot save" /> Savings
+                <strong>{money(savingsMonthly, { compact: true })}/mo</strong>
+              </div>
+            )}
           </div>
           {inMonthly > 0 && outMonthly > 0 && (
             <span className="hero-foot">
               {Math.round((outMonthly / inMonthly) * 100)}% of your regular
-              income is already committed
+              income goes to fixed costs
+              {savingsMonthly > 0 && <> · {Math.round((savingsMonthly / inMonthly) * 100)}% is saved automatically</>}
             </span>
           )}
         </section>
@@ -133,9 +150,10 @@ export function RecurringScreen({
                 )}
                 {dueOut > 0 && (
                   <span className="bad-text">
-                    −{money(dueOut, { compact: true })}
+                    −{money(dueOut, { compact: true })}{" "}
                   </span>
                 )}
+                {dueSave > 0 && <span className="accent-text">🐷 {money(dueSave, { compact: true })}</span>}
               </span>
             </div>
             {soon.length === 0 ? (
@@ -176,8 +194,9 @@ export function RecurringScreen({
             onChange={setView}
             options={[
               { value: "all", label: `All ${recurring.length}` },
-              { value: "expense", label: "Bills & costs" },
+              { value: "expense", label: "Costs" },
               { value: "income", label: "Income" },
+              { value: "transfer", label: "Savings" },
             ]}
           />
           <section className="card">

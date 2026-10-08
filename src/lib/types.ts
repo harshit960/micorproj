@@ -54,9 +54,14 @@ export interface Loan {
 
 export type Frequency = "weekly" | "monthly" | "quarterly" | "yearly";
 
+/** "transfer" = a scheduled saving: moves money from the balance into a goal. */
+export type RecurringType = FlowType | "transfer";
+
 export interface Recurring {
   id: string;
-  type: FlowType;
+  type: RecurringType;
+  /** Target goal for scheduled savings. */
+  goalId?: string;
   amount: number;
   category: string;
   note?: string;

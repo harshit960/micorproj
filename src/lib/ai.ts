@@ -1,5 +1,5 @@
 import { auth } from "./firebase";
-import { balanceOf, goalEta, goalSaved, monthlyAverages, monthTotals, shiftMonth, spendByCategory, spendByTag, spendingPace } from "./calc";
+import { balanceOf, goalEta, goalSaved, monthlyAverages, monthTotals, plannedSavings, shiftMonth, spendByCategory, spendByTag, spendingPace } from "./calc";
 import { getCurrency, today } from "./format";
 import { loanOutstanding, type Budget, type Goal, type Loan, type Recurring, type Transaction } from "./types";
 
@@ -50,13 +50,14 @@ export function buildSummary(d: { transactions: Transaction[]; goals: Goal[]; lo
     averages: { basisMonths: avg.basis, income: r0(avg.income), expense: r0(avg.expense), net: r0(avg.income - avg.expense) },
     budgets: d.budgets.map((b) => ({ category: b.category, monthlyLimit: b.amount, spentThisMonth: r0(catNow.get(b.category) ?? 0) })),
     goals: d.goals.map((g) => {
-      const eta = goalEta(g, txs, now);
+      const eta = goalEta(g, txs, now, d.recurring);
       return {
         name: g.name,
         target: g.target,
         saved: r0(goalSaved(g, txs)),
         deadline: g.deadline ?? null,
         monthlyRate: eta.done ? null : r0(eta.rate),
+        rateSource: eta.done ? null : eta.source,
         projectedFinish: eta.done ? "reached" : (eta.month ?? "no recent contributions"),
       };
     }),
@@ -65,7 +66,10 @@ export function buildSummary(d: { transactions: Transaction[]; goals: Goal[]; lo
       iOwe: r0(d.loans.filter((l) => l.direction === "borrowed").reduce((s, l) => s + loanOutstanding(l), 0)),
       overdue: d.loans.filter((l) => l.dueDate && l.dueDate < now && loanOutstanding(l) > 0).length,
     },
-    recurring: d.recurring.filter((r) => r.active).map((r) => ({ type: r.type, category: r.category, amount: r.amount, freq: r.freq })),
+    recurring: d.recurring
+      .filter((r) => r.active)
+      .map((r) => ({ type: r.type === "transfer" ? "scheduled saving" : r.type, category: r.category, amount: r.amount, freq: r.freq })),
+    scheduledSavingsPerMonth: r0(plannedSavings(d.recurring)),
     topTagsThisMonth: spendByTag(txs, cur).slice(0, 8).map(([t, a]) => [t, r0(a)]),
   };
 }

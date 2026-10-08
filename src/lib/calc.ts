@@ -114,14 +114,20 @@ export function goalMonthlyRate(g: Goal, txs: Transaction[], now: string, months
   return (moved + added) / span;
 }
 
-export function goalEta(g: Goal, txs: Transaction[], now: string) {
+/**
+ * When a goal will be reached. Scheduled (recurring) savings are the plan, so they win;
+ * without any, fall back to the recent average of what actually went in.
+ */
+export function goalEta(g: Goal, txs: Transaction[], now: string, recurring: Recurring[] = []) {
   const saved = goalSaved(g, txs);
   const left = g.target - saved;
   if (left <= 0) return { done: true as const };
-  const rate = goalMonthlyRate(g, txs, now);
-  if (rate <= 0) return { done: false as const, rate, months: null };
+  const planned = plannedGoalRate(g.id, recurring);
+  const rate = planned > 0 ? planned : goalMonthlyRate(g, txs, now);
+  const source = planned > 0 ? ("scheduled" as const) : ("recent" as const);
+  if (rate <= 0) return { done: false as const, rate, months: null, source };
   const months = Math.ceil(left / rate);
-  return { done: false as const, rate, months, month: shiftMonth(now.slice(0, 7), months) };
+  return { done: false as const, rate, months, month: shiftMonth(now.slice(0, 7), months), source };
 }
 
 // ---------- recurring ----------
@@ -150,3 +156,11 @@ export function addDays(date: string, n: number) {
   const x = new Date(y, m - 1, d + n);
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
 }
+
+/** Monthly amount scheduled into one goal by active recurring savings. */
+export const plannedGoalRate = (goalId: string, recurring: Recurring[]) =>
+  recurring.filter((r) => r.active && r.type === "transfer" && r.goalId === goalId).reduce((s, r) => s + monthlyEquivalent(r), 0);
+
+/** Monthly amount scheduled into all goals. */
+export const plannedSavings = (recurring: Recurring[]) =>
+  recurring.filter((r) => r.active && r.type === "transfer").reduce((s, r) => s + monthlyEquivalent(r), 0);

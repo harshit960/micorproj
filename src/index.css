@@ -16,6 +16,7 @@
   --hero-b: #3a2f8f;
   --series-in: #5b4bff;
   --series-out: #c97412;
+  --series-goal: #0e9f78;
   --save: #0ea5b7;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(20 20 40 / 0.06);
   --radius: 20px;
@@ -41,6 +42,7 @@
     --hero-b: #4b3dc4;
     --series-in: #8a7dff;
     --series-out: #c97412;
+    --series-goal: #199e70;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
     color-scheme: dark;
   }
@@ -62,6 +64,7 @@
   --hero-b: #4b3dc4;
   --series-in: #8a7dff;
   --series-out: #c97412;
+  --series-goal: #199e70;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
   color-scheme: dark;
 }
@@ -873,3 +876,17 @@ h3 {
 .spinner.small.dark { border-color: var(--line); border-top-color: var(--accent); }
 .tabbar button { font-size: 9.5px; }
 select.needs-choice { border-color: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent); }
+
+/* ---------- v8: scheduled savings in forecast ---------- */
+.goal-text { color: var(--series-goal); font-weight: 700; }
+.sw.gl { background: var(--series-goal); }
+.chart .ln.gl { stroke: var(--series-goal); }
+.chart .dot.gl { fill: var(--series-goal); }
+.fc-sched { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; margin: 0 0 12px; border-radius: 14px; background: color-mix(in srgb, var(--series-goal) 12%, var(--surface)); font-size: 14px; line-height: 1.45; text-align: left; width: 100%; }
+.fc-sched.over { background: var(--bad-soft); }
+.fc-sched.cta { border: 1.5px dashed color-mix(in srgb, var(--series-goal) 60%, var(--line)); }
+.gp-row { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+.gp-main { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; text-align: left; }
+.gp-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.link.small { font-size: 13px; }
+.goal-chip.new { border-style: dashed; }

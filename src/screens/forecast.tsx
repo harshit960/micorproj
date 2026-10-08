@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useData } from "../lib/data";
-import { balanceOf, goalMonthlyRate, goalSaved, monthlyAverages, monthTotals, shiftMonth, spendByCategory } from "../lib/calc";
+import { balanceOf, goalMonthlyRate, goalSaved, monthlyAverages, monthTotals, plannedGoalRate, plannedSavings, shiftMonth, spendByCategory } from "../lib/calc";
 import { monthsBetween, monthsToReach, nextMilestones, project, requiredMonthly, stdDev } from "../lib/forecast";
 import { getCurrency, money, prettyMonth, today } from "../lib/format";
 import { EXPENSE_CATEGORIES, type Goal } from "../lib/types";
 import { Progress, Segmented } from "../components/ui";
 import type { Open } from "./screens";
+import { newId } from "../lib/store";
 
 // ---------- shared scenario settings (per device) ----------
 
@@ -55,7 +56,7 @@ function useFc() {
 
 /** Everything the forecast cards share, computed once from the data. */
 function useBasis() {
-  const { transactions, goals } = useData();
+  const { transactions, goals, recurring } = useData();
   return useMemo(() => {
     const now = today();
     const cur = now.slice(0, 7);
@@ -79,8 +80,11 @@ function useBasis() {
       inGoals,
       base: balance + inGoals,
       topCats: [...catAvg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8),
+      /** Monthly amount recurring savings move into goals. */
+      planned: plannedSavings(recurring),
+      plannedCount: recurring.filter((r) => r.active && r.type === "transfer").length,
     };
-  }, [transactions, goals]);
+  }, [transactions, goals, recurring]);
 }
 
 const horizonLabel = (h: number) => (h < 12 ? `${h} months` : h === 12 ? "1 year" : `${h / 12} years`);
@@ -92,16 +96,18 @@ function ProjectionChart({
   months,
   main,
   scenario,
+  goals,
   showRange,
 }: {
   months: number;
+  goals: number[] | null;
   main: { value: number; low: number; high: number }[];
   scenario: number[] | null;
   showRange: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const cur = today().slice(0, 7);
-  const vals = [...main.flatMap((p) => (showRange ? [p.low, p.high] : [p.value])), ...(scenario ?? [])];
+  const vals = [...main.flatMap((p) => (showRange ? [p.low, p.high] : [p.value])), ...(scenario ?? []), ...(goals ?? [])];
   const lo = Math.min(0, ...vals),
     hi = Math.max(1, ...vals);
   const W = 320,
@@ -134,8 +140,13 @@ function ProjectionChart({
       <div className="chart-head">
         <div className="legend">
           <span>
-            <i className="sw in" /> Current pace
+            <i className="sw in" /> Total savings
           </span>
+          {goals && (
+            <span>
+              <i className="sw gl" /> In goals
+            </span>
+          )}
           {showRange && (
             <span>
               <i className="sw band" /> Likely range
@@ -156,6 +167,7 @@ function ProjectionChart({
             ({money(main[i].low, { compact: true })}–{money(main[i].high, { compact: true })})
           </span>
         )}
+        {goals && <span className="goal-text"> · goals {money(goals[i], { compact: true })}</span>}
         {scenario && <span className="out-text"> · {money(scenario[i], { compact: true })}</span>}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Projected savings" onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
@@ -163,9 +175,11 @@ function ProjectionChart({
         <line x1={L} x2={R} y1={B} y2={B} className="axis" />
         {showRange && <path d={band} className="band" />}
         <path d={path(main.map((p) => p.value))} className="ln in" />
+        {goals && <path d={path(goals)} className="ln gl" />}
         {scenario && <path d={path(scenario)} className="ln out dashed" />}
         {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={T} y2={B} className="crosshair" />}
         <circle cx={x(i)} cy={y(main[i].value)} r="4.5" className="dot in" />
+        {goals && <circle cx={x(i)} cy={y(goals[i])} r="4.5" className="dot gl" />}
         {scenario && <circle cx={x(i)} cy={y(scenario[i])} r="4.5" className="dot out" />}
         {ticks.map((k) => (
           <text key={k} x={x(k)} y={H - 6} textAnchor={k === 0 ? "start" : k === months ? "end" : "middle"} className="tick">
@@ -183,7 +197,7 @@ function ProjectionChart({
 
 // ---------- cards ----------
 
-export function ForecastCard() {
+export function ForecastCard({ open: openSheet }: { open: (o: Open) => void }) {
   const { transactions } = useData();
   const b = useBasis();
   const [s, set] = useFc();
@@ -199,6 +213,11 @@ export function ForecastCard() {
   const deflate = (p: (typeof main)[number]) => (s.real ? p.real / p.value || 1 : 1);
   const mainShown = main.map((p) => ({ value: show(p), low: p.low * deflate(p), high: p.high * deflate(p) }));
   const scen = boost > 0 ? project({ base: b.base, monthly: b.net + boost, months: s.horizon, annualReturn: s.annualReturn, inflation: inf }) : null;
+  // Money in goals grows by what's scheduled into them (plus the same return assumption).
+  const goalsProj =
+    b.planned > 0 || b.inGoals > 0
+      ? project({ base: b.inGoals, monthly: b.planned, months: s.horizon, annualReturn: s.annualReturn, inflation: inf }).map((p) => (s.real ? p.real : p.value))
+      : null;
   const end = main[s.horizon];
   // Shown in the same units as the total (today's money when that toggle is on).
   const growth = (end.value - end.contributed) * (s.real ? end.real / (end.value || 1) : 1);
@@ -225,6 +244,34 @@ export function ForecastCard() {
           <strong className={b.net >= 0 ? "good-text" : "bad-text"}>{money(b.net, { compact: true, sign: true })}</strong>
         </div>
       </div>
+      {b.planned > 0 ? (
+        <div className={`fc-sched ${b.planned > b.net ? "over" : ""}`}>
+          <span>
+            🐷 <b>{money(b.planned)}/mo</b> scheduled into goals ({b.plannedCount} recurring saving{b.plannedCount === 1 ? "" : "s"})
+            {b.net > 0 && b.planned <= b.net && <span className="muted"> · {Math.round((b.planned / b.net) * 100)}% of what you keep</span>}
+          </span>
+          {b.planned > b.net && (
+            <span className="small">
+              ⚠ That's more than you keep each month ({money(b.net, { compact: true })}), so your spendable balance would fall by about{" "}
+              {money(b.planned - Math.max(0, b.net), { compact: true })}/mo.
+            </span>
+          )}
+        </div>
+      ) : (
+        b.net > 0 && (
+          <button
+            className="fc-sched cta"
+            onClick={() =>
+              openSheet({ kind: "recurring", preset: { type: "transfer", amount: Math.max(step, Math.floor((b.net * 0.5) / step) * step), freq: "monthly", note: "Monthly savings" } })
+            }
+          >
+            <span>
+              🐷 <b>Schedule a recurring saving</b> so your goals fill up automatically — e.g. half of what you keep,{" "}
+              {money(Math.max(step, Math.floor((b.net * 0.5) / step) * step), { compact: true })}/mo
+            </span>
+          </button>
+        )
+      )}
 
       <Segmented
         value={String(s.horizon) as "6" | "12" | "36" | "60"}
@@ -236,7 +283,13 @@ export function ForecastCard() {
           { value: "60", label: "5Y" },
         ]}
       />
-      <ProjectionChart months={s.horizon} main={mainShown} scenario={scen ? scen.map((p) => (s.real ? p.real : p.value)) : null} showRange={b.sd > 0} />
+      <ProjectionChart
+        months={s.horizon}
+        main={mainShown}
+        goals={goalsProj}
+        scenario={scen ? scen.map((p) => (s.real ? p.real : p.value)) : null}
+        showRange={b.sd > 0}
+      />
 
       <p className="fc-summary">
         {b.net + boost > 0 || s.annualReturn > 0 ? (
@@ -250,6 +303,13 @@ export function ForecastCard() {
               </>
             )}
             .
+            {goalsProj && b.planned > 0 && (
+              <>
+                {" "}
+                About <b className="goal-text">{money(goalsProj[s.horizon], { compact: true })}</b> of that would be in your goals, thanks to{" "}
+                {money(b.planned, { compact: true })}/mo of scheduled savings.
+              </>
+            )}
             {scen && (
               <>
                 {" "}
@@ -284,6 +344,14 @@ export function ForecastCard() {
             </span>
             <input type="range" min={0} max={maxExtra} step={step} value={s.extra} onChange={(e) => set({ extra: Number(e.target.value) })} aria-label="Extra savings per month" />
           </label>
+          {s.extra > 0 && (
+            <button
+              className="btn ghost"
+              onClick={() => openSheet({ kind: "recurring", preset: { type: "transfer", amount: s.extra, freq: "monthly", note: "Extra savings" } })}
+            >
+              🐷 Make {money(s.extra, { compact: true })}/mo a recurring saving
+            </button>
+          )}
 
           {b.topCats.length > 0 && (
             <div className="whatif">
@@ -379,22 +447,27 @@ export function SafetyCard() {
 }
 
 export function GoalPlanCard({ open }: { open: (o: Open) => void }) {
-  const { goals, transactions } = useData();
+  const { goals, transactions, recurring } = useData();
   const b = useBasis();
   const rows = goals
     .map((g) => {
       const saved = goalSaved(g, transactions);
       const left = Math.max(0, g.target - saved);
-      const rate = goalMonthlyRate(g, transactions, b.now);
+      // What's scheduled is the plan; without a schedule, use the recent average.
+      const planned = plannedGoalRate(g.id, recurring);
+      const rate = planned > 0 ? planned : goalMonthlyRate(g, transactions, b.now);
       const monthsLeft = g.deadline ? Math.max(1, monthsBetween(b.cur, g.deadline.slice(0, 7))) : null;
       const need = monthsLeft ? requiredMonthly(g.target, saved, monthsLeft) : null;
-      return { g, saved, left, rate, need, monthsLeft, overdue: !!g.deadline && g.deadline < b.now };
+      return { g, saved, left, rate, planned, need, monthsLeft, overdue: !!g.deadline && g.deadline < b.now };
     })
     .filter((r) => r.left > 0);
   if (!rows.length) return null;
   const totalNeed = rows.reduce((s, r) => s + (r.need ?? 0), 0);
   const totalRate = rows.reduce((s, r) => s + r.rate, 0);
+  const totalPlanned = rows.reduce((s, r) => s + r.planned, 0);
   const share = b.net > 0 ? totalNeed / b.net : null;
+  const schedule = (g: Goal, amount: number) =>
+    open({ kind: "recurring", preset: { type: "transfer", goalId: g.id, amount: Math.ceil(amount / 100) * 100, freq: "monthly", note: `${g.name} savings` } });
   return (
     <section className="card">
       <h3 className="card-title">Goal plan</h3>
@@ -409,38 +482,65 @@ export function GoalPlanCard({ open }: { open: (o: Open) => void }) {
           ) : (
             " — but you're not saving anything right now"
           )}
-          . You've been putting in <b>{money(totalRate)}/mo</b>.
+          .{" "}
+          {totalPlanned > 0 ? (
+            <>
+              You've scheduled <b className="goal-text">{money(totalPlanned)}/mo</b>
+              {totalRate > totalPlanned && <> (plus ~{money(totalRate - totalPlanned, { compact: true })}/mo going in by hand)</>}.
+            </>
+          ) : (
+            <>
+              You've been putting in <b>{money(totalRate)}/mo</b> by hand.
+            </>
+          )}
         </p>
       )}
       <div className="goal-plan">
-        {rows.map(({ g, saved, rate, need, monthsLeft, overdue }) => {
+        {rows.map(({ g, saved, rate, planned, need, monthsLeft, overdue }) => {
           const short = need !== null ? need - rate : 0;
           const status = overdue ? "overdue" : need === null ? "open" : short <= 0.5 ? "ok" : "short";
+          const how = planned > 0 ? "scheduled" : "recent avg";
           return (
-            <button key={g.id} className="gp-row" onClick={() => open({ kind: "contribute", item: g as Goal })}>
-              <span className="goal-chip-emoji">{g.emoji}</span>
-              <span className="row-main">
-                <span className="row-title">{g.name}</span>
-                <span className="row-sub">
-                  {money(saved, { compact: true })} / {money(g.target, { compact: true })}
-                  {monthsLeft && !overdue ? ` · ${monthsLeft} mo left` : ""}
+            <div key={g.id} className="gp-row">
+              <button className="gp-main" onClick={() => open({ kind: "contribute", item: g as Goal })}>
+                <span className="goal-chip-emoji">{g.emoji}</span>
+                <span className="row-main">
+                  <span className="row-title">{g.name}</span>
+                  <span className="row-sub">
+                    {money(saved, { compact: true })} / {money(g.target, { compact: true })}
+                    {monthsLeft && !overdue ? ` · ${monthsLeft} mo left` : ""}
+                  </span>
+                  <span className="small">
+                    {need !== null && !overdue ? (
+                      <>
+                        Needs {money(need, { compact: true })}/mo · {money(rate, { compact: true })}/mo {how}
+                      </>
+                    ) : overdue ? (
+                      "Target date has passed — edit the goal to set a new one"
+                    ) : (
+                      <>
+                        {money(rate, { compact: true })}/mo {how} · no target date
+                      </>
+                    )}
+                  </span>
                 </span>
-                <span className="small">
-                  {need !== null && !overdue ? (
-                    <>
-                      Needs {money(need, { compact: true })}/mo · putting {money(rate, { compact: true })}/mo
-                    </>
-                  ) : overdue ? (
-                    "Target date has passed — edit the goal to set a new one"
-                  ) : (
-                    <>Putting {money(rate, { compact: true })}/mo · no target date</>
-                  )}
+              </button>
+              <div className="gp-side">
+                <span className={`gp-pill ${status}`}>
+                  {status === "ok" ? "On track" : status === "short" ? `+${money(short, { compact: true })}/mo` : status === "overdue" ? "Overdue" : "Flexible"}
                 </span>
-              </span>
-              <span className={`gp-pill ${status}`}>
-                {status === "ok" ? "On track" : status === "short" ? `+${money(short, { compact: true })}/mo` : status === "overdue" ? "Overdue" : "Flexible"}
-              </span>
-            </button>
+                {status === "short" && (
+                  <button className="link small" onClick={() => schedule(g, short)}>
+                    Schedule
+                  </button>
+                )}
+                {status === "open" && planned === 0 && (
+                  <button className="link small" onClick={() => schedule(g, Math.max(500, (g.target - saved) / 12))}>
+                    Schedule
+                  </button>
+                )}
+              </div>
+            </div>
           );
         })}
       </div>
@@ -448,7 +548,7 @@ export function GoalPlanCard({ open }: { open: (o: Open) => void }) {
   );
 }
 
-export function TargetCard() {
+export function TargetCard({ open }: { open: (o: Open) => void }) {
   const { store, transactions } = useData();
   const b = useBasis();
   const [s] = useFc();
@@ -494,15 +594,17 @@ export function TargetCard() {
                   : "⚠ You're not saving each month yet — try the forecast's “Try changes” to find room."}
           </p>
           {made === `${target}|${by}` ? (
-            <p className="small good-text">✓ Added to your goals below — use “Add” on it to start saving.</p>
+            <p className="small good-text">✓ Added to your goals below.</p>
           ) : (
             <button
               className="btn ghost"
               onClick={async () => {
                 const [y, m] = by.split("-").map(Number);
                 const lastDay = new Date(y, m, 0).getDate();
-                await store.add("goals", {
-                  name: `Target ${money(target, { compact: true })}`,
+                const id = newId();
+                const name = `Target ${money(target, { compact: true })}`;
+                await store.set("goals", id, {
+                  name,
                   emoji: "🎯",
                   target,
                   deadline: `${by}-${String(lastDay).padStart(2, "0")}`,
@@ -510,9 +612,11 @@ export function TargetCard() {
                   createdAt: Date.now(),
                 });
                 setMade(`${target}|${by}`);
+                // Then set up the monthly saving that gets it there.
+                if (need > 0) open({ kind: "recurring", preset: { type: "transfer", goalId: id, amount: Math.ceil(need / 100) * 100, freq: "monthly", note: `${name} savings` } });
               }}
             >
-              🎯 Make this a savings goal
+              🎯 Make it a goal{need > 0 ? ` & schedule ${money(Math.ceil(need / 100) * 100, { compact: true })}/mo` : ""}
             </button>
           )}
         </div>

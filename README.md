@@ -20,3 +20,12 @@ npm run build
 3. **Firestore** → create the database if it doesn't exist, then merge the block in `firestore.rules` into the project's rules.
 
 Config can be overridden with `VITE_FIREBASE_*` env vars (see `src/lib/firebase.ts`).
+
+## AI analysis (Gemini)
+
+`api/analyze.ts` is a Vercel Function that calls Gemini. The key never reaches the browser.
+
+- Set **`GEMINI_API_KEY`** in the Vercel project's Environment Variables (Production + Preview), then redeploy.
+- Optional: `GEMINI_MODEL` (default `gemini-2.5-flash`).
+- Only signed-in users can call it (their Firebase ID token is verified server-side).
+- The client sends aggregated totals only — no transaction notes or names of people.

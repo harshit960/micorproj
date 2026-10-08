@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useData } from "../lib/data";
-import { allTags, balanceOf, goalSaved, monthTotals, shiftMonth, spendByCategory, spendByTag } from "../lib/calc";
+import { allTags, balanceOf, goalEta, goalSaved, monthTotals, shiftMonth, spendByCategory, spendByTag } from "../lib/calc";
+import { AiCard, ForecastCard, PaceCard } from "./plan";
 import { daysUntil, money, monthKey, prettyDate, prettyMonth, today } from "../lib/format";
 import { usePrefs } from "../lib/prefs";
 import {
@@ -394,7 +395,7 @@ function ShareBars({ rows, total, label }: { rows: [string, number][]; total: nu
 }
 
 export function InsightsScreen({ open }: { open: Nav }) {
-  const { transactions, budgets } = useData();
+  const { transactions, budgets, signIn } = useData();
   const current = monthKey(today());
   const [month, setMonth] = useState(current);
   const t = monthTotals(transactions, month);
@@ -402,8 +403,14 @@ export function InsightsScreen({ open }: { open: Nav }) {
   const tags = spendByTag(transactions, month);
   const catSpend = new Map(cats);
   const months = Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5));
-  const prev = monthTotals(transactions, shiftMonth(month, -1));
-  const delta = prev.expense > 0 ? (t.expense - prev.expense) / prev.expense : null;
+  // For the month in progress, compare with the same point last month (not last month's full total).
+  const isCurrent = month === current;
+  const dayCut = today().slice(8, 10);
+  const prevKey = shiftMonth(month, -1);
+  const prevExpense = sum(
+    transactions.filter((x) => x.type === "expense" && x.date.startsWith(prevKey) && (!isCurrent || x.date.slice(8, 10) <= dayCut)),
+  );
+  const delta = prevExpense > 0 ? (t.expense - prevExpense) / prevExpense : null;
   const budgetTotal = sum(budgets);
 
   return (
@@ -421,7 +428,7 @@ export function InsightsScreen({ open }: { open: Nav }) {
           <span className="stat-value bad-text">{money(t.expense, { compact: true })}</span>
           {delta !== null && (
             <span className={`small ${delta > 0 ? "bad-text" : "good-text"}`}>
-              {delta > 0 ? "▲" : "▼"} {Math.abs(Math.round(delta * 100))}% vs last month
+              {delta > 0 ? "▲" : "▼"} {Math.abs(Math.round(delta * 100))}% vs {isCurrent ? "same day last month" : "last month"}
             </span>
           )}
         </div>
@@ -434,6 +441,9 @@ export function InsightsScreen({ open }: { open: Nav }) {
           <span className={`stat-value ${t.income - t.expense >= 0 ? "good-text" : "bad-text"}`}>{money(t.income - t.expense, { compact: true })}</span>
         </div>
       </div>
+
+      {month === current && <PaceCard />}
+      <AiCard onSignIn={signIn} />
 
       <section className="card">
         <h3 className="card-title">Last 6 months</h3>
@@ -508,6 +518,7 @@ export function SavingsScreen({ open }: { open: Nav }) {
           <Icon name="arrow" size={18} /> Move money to savings
         </button>
       )}
+      <ForecastCard />
       {goals.length === 0 && <Empty emoji="🐷" title="No savings goals" text="Create a goal — a trip, a gadget, an emergency fund — then move money into it from your balance." />}
       <div className="goal-list">
         {sorted.map((g) => {
@@ -516,6 +527,8 @@ export function SavingsScreen({ open }: { open: Nav }) {
           const done = pct >= 1;
           const d = g.deadline ? daysUntil(g.deadline) : null;
           const perMonth = d && d > 0 && !done ? (g.target - s) / Math.max(1, d / 30) : null;
+          const eta = done ? null : goalEta(g, transactions, today());
+          const late = !!(eta && !eta.done && g.deadline && (eta.months == null || eta.month! > g.deadline.slice(0, 7)));
           return (
             <article key={g.id} className={`goal ${done ? "done" : ""}`}>
               <button className="goal-top" onClick={() => open({ kind: "goal", item: g })}>
@@ -530,14 +543,19 @@ export function SavingsScreen({ open }: { open: Nav }) {
               </button>
               <Progress value={pct} tone="good" />
               <div className="goal-foot">
-                <span className="small muted">
+                <span className="small muted goal-eta">
                   {done
                     ? "Goal reached!"
                     : d === null
                       ? `${money(g.target - s, { compact: true })} to go`
                       : d < 0
                         ? "Past target date"
-                        : `${money(perMonth ?? 0, { compact: true })}/mo for ${d}d`}
+                        : `Need ${money(perMonth ?? 0, { compact: true })}/mo for ${d}d`}
+                  {!done && eta && !eta.done && (
+                    <span className={late ? "bad-text" : ""}>
+                      {eta.months == null ? "No savings in the last 3 months" : `At your pace: ${prettyMonth(eta.month!)}${late ? " ⚠ after target" : ""}`}
+                    </span>
+                  )}
                 </span>
                 <button className="btn tiny" onClick={() => open({ kind: "contribute", item: g })}>
                   <Icon name="plus" size={16} /> Add

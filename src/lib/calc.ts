@@ -58,3 +58,66 @@ export function addPeriod(date: string, freq: "weekly" | "monthly" | "yearly", a
   } else next = new Date(y + 1, m - 1, Math.min(d, new Date(y + 1, m, 0).getDate()));
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
 }
+
+// ---------- forecasting ----------
+
+const daysInMonth = (key: string) => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+};
+
+/**
+ * Average monthly flows from recent history. Uses up to `lookback` complete months that have
+ * any activity; with no complete months yet, extrapolates the current month from its pace.
+ */
+export function monthlyAverages(txs: Transaction[], now: string, lookback = 6) {
+  const cur = now.slice(0, 7);
+  const months: string[] = [];
+  for (let i = 1; i <= lookback; i++) {
+    const m = shiftMonth(cur, -i);
+    if (txs.some((t) => t.date.startsWith(m))) months.push(m);
+  }
+  if (months.length) {
+    const tot = months.map((m) => monthTotals(txs, m));
+    const avg = (k: "income" | "expense" | "saved") => tot.reduce((s, t) => s + t[k], 0) / months.length;
+    return { income: avg("income"), expense: avg("expense"), moved: avg("saved"), basis: months.length, extrapolated: false };
+  }
+  const t = monthTotals(txs, cur);
+  const f = daysInMonth(cur) / Math.max(1, Number(now.slice(8, 10)));
+  // Income usually lands once (salary) rather than daily, so don't scale it up.
+  return { income: t.income, expense: t.expense * f, moved: t.saved, basis: 0, extrapolated: true };
+}
+
+/** How this month's spending is tracking against the month's length. */
+export function spendingPace(txs: Transaction[], now: string) {
+  const cur = now.slice(0, 7);
+  const day = Number(now.slice(8, 10));
+  const dim = daysInMonth(cur);
+  const spent = monthTotals(txs, cur).expense;
+  return { spent, projected: day >= dim ? spent : (spent / day) * dim, day, daysInMonth: dim };
+}
+
+/** Average monthly amount going into a goal over the last `months` months (transfers + direct adds). */
+export function goalMonthlyRate(g: Goal, txs: Transaction[], now: string, months = 3) {
+  const since = shiftMonth(now.slice(0, 7), -(months - 1)) + "-01";
+  const moved = sum(txs.filter((t) => t.type === "transfer" && t.goalId === g.id && t.date >= since));
+  const added = sum(g.contributions.filter((c) => c.date >= since));
+  // Don't divide by months that predate the goal.
+  const created = new Date(g.createdAt);
+  const createdKey = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, "0")}-01`;
+  const start = createdKey > since ? createdKey : since;
+  const [sy, sm] = start.split("-").map(Number);
+  const [ny, nm] = now.split("-").map(Number);
+  const span = Math.max(1, (ny - sy) * 12 + (nm - sm) + 1);
+  return (moved + added) / span;
+}
+
+export function goalEta(g: Goal, txs: Transaction[], now: string) {
+  const saved = goalSaved(g, txs);
+  const left = g.target - saved;
+  if (left <= 0) return { done: true as const };
+  const rate = goalMonthlyRate(g, txs, now);
+  if (rate <= 0) return { done: false as const, rate, months: null };
+  const months = Math.ceil(left / rate);
+  return { done: false as const, rate, months, month: shiftMonth(now.slice(0, 7), months) };
+}

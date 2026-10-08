@@ -3,6 +3,7 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDocFromServer,
   onSnapshot,
   setDoc,
   updateDoc,
@@ -87,7 +88,11 @@ const userCol = (uid: string, col: CollectionName) => collection(db, "kosh_users
 const clean = <T extends object>(o: T) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 
-export function createCloudStore(uid: string, onWriteError: (e: Error) => void): Store {
+export function createCloudStore(
+  uid: string,
+  onWriteError: (e: Error) => void,
+  onPending?: (col: CollectionName, pending: boolean) => void,
+): Store {
   // Firestore applies writes to its local cache immediately (snapshots update right away) but
   // only resolves the promise once the server acks — which never happens offline. Don't make
   // the UI wait for that; surface failures (e.g. rules rejections) through onWriteError.
@@ -100,7 +105,11 @@ export function createCloudStore(uid: string, onWriteError: (e: Error) => void):
     subscribe(col, cb, onError) {
       return onSnapshot(
         userCol(uid, col),
-        (snap) => cb(snap.docs.map((d) => ({ ...(d.data() as any), id: d.id }))),
+        { includeMetadataChanges: true },
+        (snap) => {
+          onPending?.(col, snap.metadata.hasPendingWrites);
+          cb(snap.docs.map((d) => ({ ...(d.data() as any), id: d.id })));
+        },
         (e) => onError?.(e),
       );
     },
@@ -125,16 +134,59 @@ export function localItemCount() {
   return COLLECTIONS.reduce((n, c) => n + readLocal(c).length, 0);
 }
 
-/** Copy guest data into the signed-in user's Firestore space, then clear it locally. */
+export type CloudStatus = "ok" | "missing-db" | "denied" | "offline" | "error";
+
+/**
+ * Ask the server directly whether this user's cloud space is usable. Uses Firestore's REST
+ * API rather than the SDK: when the database doesn't exist the SDK only reports "client is
+ * offline", while REST says exactly what's wrong (404 database missing / 403 rules).
+ */
+export async function checkCloud(uid: string, idToken: string): Promise<{ status: CloudStatus; detail?: string }> {
+  if (!navigator.onLine) return { status: "offline" };
+  const projectId = db.app.options.projectId;
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/kosh_users/${uid}/meta/ping`;
+  let res: Response;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 10000);
+    res = await fetch(url, { headers: { authorization: `Bearer ${idToken}` }, signal: ctrl.signal });
+    clearTimeout(t);
+  } catch {
+    return { status: "offline" };
+  }
+  if (res.ok) return { status: "ok" };
+  const body = await res.json().catch(() => ({}) as any);
+  const msg: string = body?.error?.message ?? `HTTP ${res.status}`;
+  if (res.status === 404) return /database .* does not exist/i.test(msg) ? { status: "missing-db", detail: msg } : { status: "ok" }; // 404 doc = fine
+  if (res.status === 403) return { status: "denied", detail: msg };
+  if (res.status === 401) {
+    // Token not accepted by REST: a token-less probe still reveals a missing database…
+    const anon = await fetch(url).catch(() => null);
+    const anonMsg: string = anon ? ((await anon.json().catch(() => ({}))) as any)?.error?.message ?? "" : "";
+    if (anon?.status === 404 && /database .* does not exist/i.test(anonMsg)) return { status: "missing-db", detail: anonMsg };
+    // …otherwise let the SDK decide (it handles its own auth).
+    try {
+      await getDocFromServer(doc(db, "kosh_users", uid, "meta", "ping"));
+      return { status: "ok" };
+    } catch (e: any) {
+      return { status: e?.code === "permission-denied" ? "denied" : e?.code === "unavailable" ? "offline" : "error", detail: e?.message };
+    }
+  }
+  return { status: res.status >= 500 ? "offline" : "error", detail: msg };
+}
+
+/** Copy guest/offline data into the signed-in user's Firestore space, then clear it locally. */
 export async function migrateLocalToCloud(uid: string) {
-  const batch = writeBatch(db);
-  for (const col of COLLECTIONS) {
-    for (const item of readLocal(col)) {
+  const items = COLLECTIONS.flatMap((col) => readLocal(col).map((item) => [col, item] as const));
+  // Firestore batches are capped at 500 writes.
+  for (let i = 0; i < items.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const [col, item] of items.slice(i, i + 400)) {
       const { id, ...rest } = item as any;
       batch.set(doc(userCol(uid, col), id || newId()), clean(rest));
     }
+    await batch.commit();
   }
-  await batch.commit();
   COLLECTIONS.forEach((c) => {
     try {
       localStorage.removeItem(localKey(c));

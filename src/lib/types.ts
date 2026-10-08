@@ -12,6 +12,12 @@ export interface Transaction {
   tags?: string[];
   goalId?: string;
   recurringId?: string;
+  /** Paid with this credit card. */
+  cardId?: string;
+  /** Raw merchant text from a statement. */
+  merchant?: string;
+  /** Statement import this came from (lets an import be undone). */
+  importId?: string;
   date: string; // YYYY-MM-DD
   createdAt: number;
 }
@@ -69,16 +75,54 @@ export interface Budget {
   createdAt: number;
 }
 
+export interface StatementRecord {
+  id: string;
+  importedAt: number;
+  fileName: string;
+  from?: string;
+  to?: string;
+  statementDate?: string;
+  dueDate?: string;
+  totalDue?: number;
+  minDue?: number;
+  count: number;
+  spend: number;
+  credits: number;
+  paid?: boolean;
+}
+
+export interface Card {
+  id: string;
+  name: string;
+  issuer?: string;
+  last4?: string;
+  colorIdx: number; // fixed per card so its colour never shifts when others are filtered
+  limit?: number;
+  billDay?: number; // statement generation day of month
+  dueDay?: number;
+  statements: StatementRecord[];
+  createdAt: number;
+}
+
+/** A category the user picked for a merchant; reused on future imports. Doc id = merchant key. */
+export interface MerchantRule {
+  id: string;
+  category: string;
+  createdAt: number;
+}
+
 export interface Collections {
   transactions: Transaction;
   goals: Goal;
   loans: Loan;
   recurring: Recurring;
   budgets: Budget;
+  cards: Card;
+  merchants: MerchantRule;
 }
 
 export type CollectionName = keyof Collections;
-export const COLLECTIONS: CollectionName[] = ["transactions", "goals", "loans", "recurring", "budgets"];
+export const COLLECTIONS: CollectionName[] = ["transactions", "goals", "loans", "recurring", "budgets", "cards", "merchants"];
 
 export const EXPENSE_CATEGORIES = [
   { name: "Food", emoji: "🍜" },
@@ -96,6 +140,7 @@ export const EXPENSE_CATEGORIES = [
   { name: "Insurance", emoji: "🛡️" },
   { name: "Investments", emoji: "📈" },
   { name: "Gifts", emoji: "🎁" },
+  { name: "Fees & charges", emoji: "🧾" },
   { name: "Other", emoji: "📦" },
 ];
 

@@ -4,6 +4,7 @@ import { CURRENCIES, getCurrency, setCurrency, today } from "../lib/format";
 import { usePrefs, type Theme } from "../lib/prefs";
 import { COLLECTIONS, type CollectionName } from "../lib/types";
 import { Icon, Segmented } from "./ui";
+import { SyncStatus } from "./sync";
 
 async function saveFile(name: string, body: string, type: string) {
   const file = new File([body], name, { type });
@@ -86,7 +87,7 @@ export function Settings({ onDone, install }: { onDone: () => void; install: Rea
           <span className="small muted">{user?.email ?? "Data saved on this device only"}</span>
         </div>
       </div>
-      <div className={`sync-pill ${store.kind}`}>{store.kind === "cloud" ? "☁️ Synced to the cloud" : "📱 Stored locally"}</div>
+      <SyncStatus />
       {install}
 
       <h3 className="settings-h">Display</h3>

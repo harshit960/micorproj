@@ -69,8 +69,9 @@ export function TxForm({
   defaultGoalId?: string;
   onDone: () => void;
 }) {
-  const { store, transactions, goals } = useData();
+  const { store, transactions, goals, cards } = useData();
   const [type, setType] = useState<TxType>(initial?.type ?? defaultType ?? "expense");
+  const [cardId, setCardId] = useState(initial?.cardId ?? "");
   const [withdraw, setWithdraw] = useState(initial?.type === "transfer" && initial.amount < 0);
   const [amount, setAmount] = useState(initial ? String(Math.abs(initial.amount)) : "");
   const [category, setCategory] = useState(initial?.category ?? (type === "income" ? "Salary" : "Food"));
@@ -95,13 +96,23 @@ export function TxForm({
         goalId,
         note: note.trim() || undefined,
         tags: undefined,
+        cardId: undefined,
         date,
       };
       if (initial) await store.update("transactions", initial.id, data);
       else await store.add("transactions", { ...data, createdAt: Date.now() });
       return;
     }
-    const data = { type, amount: amt, category, note: note.trim() || undefined, tags: tags.length ? tags : undefined, goalId: undefined, date };
+    const data = {
+      type,
+      amount: amt,
+      category,
+      note: note.trim() || undefined,
+      tags: tags.length ? tags : undefined,
+      goalId: undefined,
+      cardId: cardId || undefined,
+      date,
+    };
     if (initial) {
       await store.update("transactions", initial.id, data);
       return;
@@ -184,6 +195,19 @@ export function TxForm({
           <Field label="Tags">
             <TagInput value={tags} onChange={setTags} suggestions={tagSuggestions} />
           </Field>
+          {cards.length > 0 && (
+            <Field label={type === "income" ? "Credited to" : "Paid with"}>
+              <select value={cardId} onChange={(e) => setCardId(e.target.value)}>
+                <option value="">{type === "income" ? "Bank / cash" : "Cash / UPI / debit card"}</option>
+                {cards.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    💳 {c.name}
+                    {c.last4 ? ` ··${c.last4}` : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
         </>
       )}
 

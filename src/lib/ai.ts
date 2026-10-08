@@ -101,3 +101,37 @@ export async function analyze(summary: ReturnType<typeof buildSummary>, question
   }
   return result;
 }
+
+/** Client-side masking before any statement text leaves the device. */
+export function maskStatementText(t: string) {
+  return t
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "[email]")
+    .replace(/\b[A-Z]{5}\d{4}[A-Z]\b/g, "[id]")
+    .replace(/\d[\d -]{8,}\d/g, (m) => (m.replace(/\D/g, "").length >= 9 ? "[number]" : m));
+}
+
+/** Opt-in fallback: let Gemini pull transactions out of a statement our parser couldn't read. */
+export async function aiReadStatement(text: string) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Sign in with Google to use the AI statement reader.");
+  if (!navigator.onLine) throw new Error("You're offline — the AI reader needs a connection.");
+  const res = await fetch("/api/statement", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${await user.getIdToken()}` },
+    body: JSON.stringify({ text: maskStatementText(text).slice(0, 60000) }),
+  });
+  const data = await res.json().catch(() => ({ error: "AI request failed." }));
+  if (!res.ok) throw new Error(data.error ?? "AI request failed.");
+  const isDate = (s: unknown) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const txs = (data.txs as any[])
+    .filter((t) => isDate(t?.date) && typeof t?.description === "string" && Number(t?.amount) > 0)
+    .map((t) => ({
+      date: t.date as string,
+      description: String(t.description).slice(0, 120),
+      amount: Math.round(Number(t.amount) * 100) / 100,
+      direction: (t.direction === "credit" ? "credit" : "debit") as "credit" | "debit",
+      raw: "",
+    }));
+  if (!txs.length) throw new Error("The AI couldn't find transactions either. Try your bank's CSV/Excel export.");
+  return txs;
+}

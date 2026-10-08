@@ -110,6 +110,7 @@ const PATHS: Record<string, string> = {
   left: "M15 6l-6 6 6 6",
   arrow: "M5 12h14M13 6l6 6-6 6",
   tag: "M3 12V3h9l9 9-9 9zM7.5 7.5h.01",
+  card: "M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM2 10h20M6 15h4",
   google: "",
 };
 

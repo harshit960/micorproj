@@ -3,7 +3,10 @@ import { useData } from "./lib/data";
 import { usePWA } from "./lib/pwa";
 import { BudgetForm, ContributeForm, GoalForm, LoanForm, RecurringForm, RepayForm, TxForm } from "./components/forms";
 import { RecurringScreen } from "./screens/recurring";
+import { CardDetail, CardForm, CardsScreen, ImportFlow } from "./screens/cards";
+import { cardLabel } from "./lib/cards";
 import { Settings } from "./components/settings";
+import { SyncBanner } from "./components/sync";
 import { Icon, Sheet } from "./components/ui";
 import { ActivityScreen, HomeScreen, InsightsScreen, LoansScreen, SavingsScreen, type Open, type Tab } from "./screens/screens";
 
@@ -125,19 +128,24 @@ function UpdateToast() {
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "home", label: "Home", icon: "home" },
   { id: "activity", label: "Activity", icon: "list" },
+  { id: "cards", label: "Cards", icon: "card" },
   { id: "recurring", label: "Recurring", icon: "repeat" },
   { id: "insights", label: "Insights", icon: "chart" },
   { id: "savings", label: "Savings", icon: "piggy" },
   { id: "loans", label: "Loans", icon: "hand" },
 ];
 
-const TITLES: Record<Open["kind"], (o: Open) => string> = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const TITLES: Record<Open["kind"], (o: any) => string> = {
   tx: (o) => (o.item ? "Edit transaction" : (o as any).type === "transfer" ? "Move to savings" : "New transaction"),
   goal: (o) => (o.item ? "Edit goal" : "New savings goal"),
   contribute: (o) => `${(o.item as any).emoji} ${(o.item as any).name}`,
   loan: (o) => (o.item ? "Edit record" : "Lend or borrow"),
   repay: () => "Record repayment",
   recurring: (o) => (o.item ? "Edit recurring" : (o as any).preset?.note ? `Add ${(o as any).preset.note}` : "New recurring item"),
+  card: (o) => (o.item ? "Edit card" : "Add a credit card"),
+  cardDetail: (o) => cardLabel((o as any).item),
+  import: () => "Import statement",
   budget: (o) => (o.item ? `${(o.item as any).category} budget` : "New monthly budget"),
 };
 
@@ -177,6 +185,7 @@ export default function App() {
     else if (tab === "loans") setSheet({ kind: "loan" });
     else if (tab === "insights") setSheet({ kind: "budget" });
     else if (tab === "recurring") setSheet({ kind: "recurring" });
+    else if (tab === "cards") setSheet({ kind: "import" });
     else setSheet({ kind: "tx" });
   };
 
@@ -196,12 +205,20 @@ export default function App() {
       </header>
 
       {error && <div className="banner">{error}</div>}
+      <SyncBanner onDetails={() => setSettings(true)} />
       {tab === "home" && <InstallCard />}
       <UpdateToast />
 
       <main>
         {tab === "home" && <HomeScreen open={setSheet} go={setTab} />}
         {tab === "activity" && <ActivityScreen open={setSheet} />}
+        {tab === "cards" && (
+          <CardsScreen
+            onImport={(cardId) => setSheet({ kind: "import", cardId })}
+            onCard={(c) => setSheet({ kind: "cardDetail", item: c })}
+            onAddCard={() => setSheet({ kind: "card" })}
+          />
+        )}
         {tab === "recurring" && (
           <RecurringScreen onEdit={(r) => setSheet({ kind: "recurring", item: r })} onAdd={(preset) => setSheet({ kind: "recurring", preset })} />
         )}
@@ -231,6 +248,25 @@ export default function App() {
         {sheet?.kind === "repay" && <RepayForm loan={sheet.item} onDone={close} />}
         {sheet?.kind === "recurring" && (
           <RecurringForm key={sheet.item?.id ?? sheet.preset?.note ?? "new"} initial={sheet.item} preset={sheet.preset} onDone={close} />
+        )}
+        {sheet?.kind === "card" && (
+          <CardForm
+            key={sheet.item?.id ?? "new"}
+            initial={sheet.item}
+            onDone={(c) => (c ? setSheet({ kind: "cardDetail", item: c }) : close())}
+          />
+        )}
+        {sheet?.kind === "cardDetail" && (
+          <CardDetail
+            key={sheet.item.id}
+            card={sheet.item}
+            onEdit={() => setSheet({ kind: "card", item: sheet.item })}
+            onImport={() => setSheet({ kind: "import", cardId: sheet.item.id })}
+            onTx={(t) => setSheet({ kind: "tx", item: t })}
+          />
+        )}
+        {sheet?.kind === "import" && (
+          <ImportFlow key={sheet.cardId ?? "any"} defaultCardId={sheet.cardId} onDone={close} onOpenCard={(c) => setSheet({ kind: "cardDetail", item: c })} />
         )}
         {sheet?.kind === "budget" && <BudgetForm key={sheet.item?.id ?? "new"} initial={sheet.item} onDone={close} />}
       </Sheet>

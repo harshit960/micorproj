@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useData } from "../lib/data";
 import { allTags, balanceOf, goalEta, goalSaved, monthTotals, shiftMonth, spendByCategory, spendByTag } from "../lib/calc";
 import { AiCard, PaceCard } from "./plan";
+import { CardChip } from "./cards";
 import { ForecastCard, GoalPlanCard, SafetyCard, TargetCard } from "./forecast";
 import { daysUntil, money, monthKey, prettyDate, prettyMonth, today } from "../lib/format";
 import { usePrefs } from "../lib/prefs";
@@ -12,6 +13,7 @@ import {
   loanRepaid,
   sum,
   type Budget,
+  type Card,
   type Goal,
   type Loan,
   type Recurring,
@@ -28,14 +30,18 @@ export type Open =
   | { kind: "loan"; item?: Loan }
   | { kind: "repay"; item: Loan }
   | { kind: "budget"; item?: Budget }
-  | { kind: "recurring"; item?: Recurring; preset?: RecurringPreset };
+  | { kind: "recurring"; item?: Recurring; preset?: RecurringPreset }
+  | { kind: "card"; item?: Card }
+  | { kind: "cardDetail"; item: Card }
+  | { kind: "import"; cardId?: string };
 
-export type Tab = "home" | "activity" | "recurring" | "insights" | "savings" | "loans";
+export type Tab = "home" | "activity" | "cards" | "recurring" | "insights" | "savings" | "loans";
 type Nav = (o: Open) => void;
 
 const catEmoji = (name: string) => EXPENSE_CATEGORIES.find((c) => c.name === name)?.emoji ?? "•";
 
 function TxRow({ tx, goals, onClick }: { tx: Transaction; goals: Goal[]; onClick: () => void }) {
+  const { cards } = useData();
   if (tx.type === "transfer") {
     const g = goals.find((x) => x.id === tx.goalId);
     const into = tx.amount > 0;
@@ -63,6 +69,7 @@ function TxRow({ tx, goals, onClick }: { tx: Transaction; goals: Goal[]; onClick
         <span className="row-sub">
           {tx.note ? `${tx.category} · ` : ""}
           {prettyDate(tx.date)}
+          {tx.cardId && <CardChip card={cards.find((c) => c.id === tx.cardId)} />}
           {tx.tags?.map((t) => (
             <span key={t} className="tag-mini">
               #{t}
@@ -231,15 +238,17 @@ export function HomeScreen({ open, go }: { open: Nav; go: (tab: Tab) => void }) 
 }
 
 export function ActivityScreen({ open }: { open: Nav }) {
-  const { transactions, goals } = useData();
+  const { transactions, goals, cards } = useData();
   const [filter, setFilter] = useState<"all" | TxType>("all");
   const [tag, setTag] = useState<string | null>(null);
+  const [pay, setPay] = useState<string | null>(null); // card id, "none" (not on a card) or null (any)
   const [q, setQ] = useState("");
   const tags = useMemo(() => allTags(transactions), [transactions]);
   const goalName = (id?: string) => goals.find((g) => g.id === id)?.name ?? "";
   const list = transactions
     .filter((t) => filter === "all" || t.type === filter)
     .filter((t) => !tag || t.tags?.includes(tag))
+    .filter((t) => !pay || (pay === "none" ? !t.cardId : t.cardId === pay))
     .filter((t) => !q || `${t.note ?? ""} ${t.category} ${t.tags?.join(" ") ?? ""} ${goalName(t.goalId)}`.toLowerCase().includes(q.toLowerCase().replace(/^#/, "")))
     .sort(byDateDesc);
 
@@ -264,6 +273,21 @@ export function ActivityScreen({ open }: { open: Nav }) {
           { value: "transfer", label: "Savings" },
         ]}
       />
+      {cards.length > 0 && (
+        <div className="tag-scroll" role="group" aria-label="Filter by payment method">
+          <button className={`tag ${!pay ? "on" : ""}`} onClick={() => setPay(null)}>
+            Any method
+          </button>
+          {cards.map((c) => (
+            <button key={c.id} className={`tag ${pay === c.id ? "on" : ""}`} onClick={() => setPay(pay === c.id ? null : c.id)}>
+              💳 {c.name}
+            </button>
+          ))}
+          <button className={`tag ${pay === "none" ? "on" : ""}`} onClick={() => setPay(pay === "none" ? null : "none")}>
+            Not on a card
+          </button>
+        </div>
+      )}
       {tags.length > 0 && (
         <div className="tag-scroll" role="group" aria-label="Filter by tag">
           {tags.map((t) => (

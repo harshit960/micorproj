@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, type User } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
-import { createCloudStore, createLocalStore, localItemCount, migrateLocalToCloud, type Store } from "./store";
+import { checkCloud, createCloudStore, createLocalStore, localItemCount, migrateLocalToCloud, type CloudStatus, type Store } from "./store";
 import { addPeriod } from "./calc";
 import { today } from "./format";
-import type { Budget, Goal, Loan, Recurring, Transaction } from "./types";
+import type { Budget, Card, Goal, Loan, MerchantRule, Recurring, Transaction } from "./types";
 
 interface DataCtx {
   ready: boolean;
@@ -16,7 +16,14 @@ interface DataCtx {
   loans: Loan[];
   recurring: Recurring[];
   budgets: Budget[];
+  cards: Card[];
+  merchants: MerchantRule[];
   error: string | null;
+  /** Cloud sync health for signed-in users (null for guests). */
+  cloud: CloudStatus | "checking" | null;
+  cloudDetail?: string;
+  syncing: boolean;
+  recheckCloud: () => void;
   signIn: () => Promise<void>;
   logOut: () => Promise<void>;
   continueAsGuest: () => void;
@@ -42,27 +49,87 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [recurring, setRecurring] = useState<Recurring[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [merchants, setMerchants] = useState<MerchantRule[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const [cloud, setCloud] = useState<CloudStatus | "checking" | null>(null);
+  const [cloudDetail, setCloudDetail] = useState<string>();
+  const [pending, setPending] = useState<Record<string, boolean>>({});
 
   useEffect(
     () =>
-      onAuthStateChanged(auth, async (u) => {
-        if (u && localItemCount() > 0) {
-          try {
-            await migrateLocalToCloud(u.uid);
-          } catch (e) {
-            setError("Couldn't move your guest data to the cloud: " + (e as Error).message);
-          }
-        }
+      onAuthStateChanged(auth, (u) => {
         setUser(u);
+        setCloud(u ? "checking" : null);
         setAuthReady(true);
       }),
     [],
   );
 
+  // Verify the cloud database really works before trusting it with data. Until it does
+  // (database not created, rules rejecting us…), keep everything on this device.
+  const okKey = (uid: string) => `kosh:cloud-ok:${uid}`;
+  const wasOk = (uid: string) => {
+    try {
+      return localStorage.getItem(okKey(uid)) === "1";
+    } catch {
+      return false;
+    }
+  };
+  const [checkTick, setCheckTick] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const r = await checkCloud(user.uid, await user.getIdToken().catch(() => ""));
+      if (cancelled) return;
+      setCloudDetail(r.detail);
+      if (r.status === "ok") {
+        try {
+          localStorage.setItem(okKey(user.uid), "1");
+        } catch {
+          /* ignore */
+        }
+        if (localItemCount() > 0) {
+          try {
+            await migrateLocalToCloud(user.uid);
+          } catch (e) {
+            setError("Couldn't upload your on-device data: " + (e as Error).message);
+          }
+        }
+      }
+      if (!cancelled) setCloud(r.status);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, checkTick]);
+
+  // Re-check when the connection comes back, and every minute while something's wrong.
+  useEffect(() => {
+    if (!user || cloud === "ok" || cloud === "checking") return;
+    const again = () => setCheckTick((n) => n + 1);
+    window.addEventListener("online", again);
+    const t = setInterval(again, 60000);
+    return () => {
+      window.removeEventListener("online", again);
+      clearInterval(t);
+    };
+  }, [user, cloud]);
+
+  const useCloud = !!user && (cloud === "ok" || ((cloud === "checking" || cloud === "offline") && wasOk(user.uid)));
   const store = useMemo(
-    () => (user ? createCloudStore(user.uid, (e) => setError("Couldn't save to the cloud: " + e.message)) : createLocalStore()),
-    [user],
+    () =>
+      user && useCloud
+        ? createCloudStore(
+            user.uid,
+            (e) => setError("Couldn't save to the cloud: " + e.message),
+            (col, p) => setPending((prev) => (prev[col] === p ? prev : { ...prev, [col]: p })),
+          )
+        : createLocalStore(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user, useCloud],
   );
 
   useEffect(() => {
@@ -74,6 +141,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       store.subscribe("loans", setLoans, onErr),
       store.subscribe("recurring", setRecurring, onErr),
       store.subscribe("budgets", setBudgets, onErr),
+      store.subscribe("cards", setCards, onErr),
+      store.subscribe("merchants", setMerchants, onErr),
     ];
     return () => unsubs.forEach((u) => u());
   }, [store, authReady]);
@@ -120,7 +189,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     loans,
     recurring,
     budgets,
+    cards,
+    merchants,
     error,
+    cloud,
+    cloudDetail,
+    syncing: useCloud && Object.values(pending).some(Boolean),
+    recheckCloud: () => {
+      setCloud("checking");
+      setCheckTick((n) => n + 1);
+    },
     async signIn() {
       setError(null);
       try {

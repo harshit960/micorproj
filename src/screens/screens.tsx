@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useData } from "../lib/data";
 import { allTags, balanceOf, goalEta, goalSaved, monthTotals, shiftMonth, spendByCategory, spendByTag } from "../lib/calc";
-import { AiCard, ForecastCard, PaceCard } from "./plan";
+import { AiCard, PaceCard } from "./plan";
+import { ForecastCard, GoalPlanCard, SafetyCard, TargetCard } from "./forecast";
 import { daysUntil, money, monthKey, prettyDate, prettyMonth, today } from "../lib/format";
 import { usePrefs } from "../lib/prefs";
 import {
@@ -522,6 +523,8 @@ export function SavingsScreen({ open }: { open: Nav }) {
         </button>
       )}
       <ForecastCard />
+      <SafetyCard />
+      <GoalPlanCard open={open} />
       {goals.length === 0 && <Empty emoji="🐷" title="No savings goals" text="Create a goal — a trip, a gadget, an emergency fund — then move money into it from your balance." />}
       <div className="goal-list">
         {sorted.map((g) => {
@@ -568,6 +571,7 @@ export function SavingsScreen({ open }: { open: Nav }) {
           );
         })}
       </div>
+      <TargetCard />
     </div>
   );
 }

@@ -33,12 +33,17 @@ export function currencySymbol() {
 export function money(n: number, opts: { compact?: boolean; sign?: boolean } = {}) {
   const c = CURRENCIES.find((x) => x.code === currency) ?? CURRENCIES[0];
   if (amountsHidden()) return currencySymbol() + "••••";
+  const compactNotation = !!opts.compact && Math.abs(n) >= 100000;
+  // Show paise only for amounts that really have them (₹649.50), not for computed
+  // values like averages and projections (₹41,666.666…), which round to whole units.
+  const cents = Math.abs(n) * 100;
+  const hasPaise = !Number.isInteger(n) && Math.abs(cents - Math.round(cents)) < 1e-6;
   const s = new Intl.NumberFormat(c.locale, {
     style: "currency",
     currency: c.code,
     minimumFractionDigits: 0,
-    maximumFractionDigits: opts.compact ? 1 : Number.isInteger(n) ? 0 : 2,
-    notation: opts.compact && Math.abs(n) >= 100000 ? "compact" : "standard",
+    maximumFractionDigits: compactNotation ? 1 : opts.compact ? 0 : hasPaise ? 2 : 0,
+    notation: compactNotation ? "compact" : "standard",
   }).format(Math.abs(n));
   if (opts.sign) return (n < 0 ? "−" : "+") + s;
   return n < 0 ? "−" + s : s;

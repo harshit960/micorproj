@@ -1,3 +1,5 @@
+import { amountsHidden } from "./prefs";
+
 export const CURRENCIES = [
   { code: "INR", locale: "en-IN" },
   { code: "USD", locale: "en-US" },
@@ -23,8 +25,14 @@ export function setCurrency(code: string) {
   }
 }
 
+export function currencySymbol() {
+  const c = CURRENCIES.find((x) => x.code === currency) ?? CURRENCIES[0];
+  return new Intl.NumberFormat(c.locale, { style: "currency", currency: c.code }).formatToParts(0).find((p) => p.type === "currency")?.value ?? "";
+}
+
 export function money(n: number, opts: { compact?: boolean; sign?: boolean } = {}) {
   const c = CURRENCIES.find((x) => x.code === currency) ?? CURRENCIES[0];
+  if (amountsHidden()) return currencySymbol() + "••••";
   const s = new Intl.NumberFormat(c.locale, {
     style: "currency",
     currency: c.code,

@@ -1,17 +1,20 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useData } from "../lib/data";
+import { addPeriod, allTags, balanceOf, goalSaved } from "../lib/calc";
 import { money, today } from "../lib/format";
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
   loanOutstanding,
+  type Budget,
+  type Frequency,
   type Goal,
   type Loan,
   type LoanDirection,
   type Transaction,
   type TxType,
 } from "../lib/types";
-import { AmountField, Field, Segmented } from "./ui";
+import { AmountField, Field, Segmented, TagInput } from "./ui";
 
 const parse = (s: string) => Math.round(parseFloat(s) * 100) / 100;
 const valid = (s: string) => parse(s) > 0;
@@ -35,20 +38,100 @@ function useSubmit(fn: () => Promise<void>, done: () => void) {
   return { busy, err, submit };
 }
 
-export function TxForm({ initial, defaultType, onDone }: { initial?: Transaction; defaultType?: TxType; onDone: () => void }) {
-  const { store } = useData();
+function GoalPicker({ goals, value, onChange, txs }: { goals: Goal[]; value: string; onChange: (id: string) => void; txs: Transaction[] }) {
+  return (
+    <div className="goal-pick">
+      {goals.map((g) => (
+        <button type="button" key={g.id} className={`goal-chip ${value === g.id ? "on" : ""}`} onClick={() => onChange(g.id)}>
+          <span className="goal-chip-emoji">{g.emoji}</span>
+          <span className="row-main">
+            <span className="row-title">{g.name}</span>
+            <span className="row-sub">
+              {money(goalSaved(g, txs), { compact: true })} / {money(g.target, { compact: true })}
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function TxForm({
+  initial,
+  defaultType,
+  defaultGoalId,
+  onDone,
+}: {
+  initial?: Transaction;
+  defaultType?: TxType;
+  defaultGoalId?: string;
+  onDone: () => void;
+}) {
+  const { store, transactions, goals } = useData();
   const [type, setType] = useState<TxType>(initial?.type ?? defaultType ?? "expense");
-  const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
+  const [withdraw, setWithdraw] = useState(initial?.type === "transfer" && initial.amount < 0);
+  const [amount, setAmount] = useState(initial ? String(Math.abs(initial.amount)) : "");
   const [category, setCategory] = useState(initial?.category ?? (type === "income" ? "Salary" : "Food"));
+  const [goalId, setGoalId] = useState(initial?.goalId ?? defaultGoalId ?? goals[0]?.id ?? "");
+  const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
   const [note, setNote] = useState(initial?.note ?? "");
   const [date, setDate] = useState(initial?.date ?? today());
+  const [repeat, setRepeat] = useState<"never" | Frequency>("never");
+  const tagSuggestions = useMemo(() => allTags(transactions), [transactions]);
   const cats = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const goal = goals.find((g) => g.id === goalId);
+  const balance = balanceOf(transactions.filter((t) => t.id !== initial?.id));
 
   const { busy, err, submit } = useSubmit(async () => {
-    const data = { type, amount: parse(amount), category, note: note.trim() || undefined, date };
-    if (initial) await store.update("transactions", initial.id, data);
-    else await store.add("transactions", { ...data, createdAt: Date.now() });
+    const amt = parse(amount);
+    if (type === "transfer") {
+      if (!goal) throw new Error("Pick a savings goal");
+      const data = {
+        type,
+        amount: withdraw ? -amt : amt,
+        category: "Savings",
+        goalId,
+        note: note.trim() || undefined,
+        tags: undefined,
+        date,
+      };
+      if (initial) await store.update("transactions", initial.id, data);
+      else await store.add("transactions", { ...data, createdAt: Date.now() });
+      return;
+    }
+    const data = { type, amount: amt, category, note: note.trim() || undefined, tags: tags.length ? tags : undefined, goalId: undefined, date };
+    if (initial) {
+      await store.update("transactions", initial.id, data);
+      return;
+    }
+    await store.add("transactions", { ...data, createdAt: Date.now() });
+    if (repeat !== "never") {
+      const anchorDay = Number(date.slice(8, 10));
+      await store.add("recurring", {
+        type,
+        amount: amt,
+        category,
+        note: data.note,
+        tags: data.tags,
+        freq: repeat,
+        anchorDay,
+        nextDate: addPeriod(date, repeat, anchorDay),
+        active: true,
+        createdAt: Date.now(),
+      });
+    }
   }, onDone);
+
+  const label =
+    type === "transfer"
+      ? withdraw
+        ? `Withdraw to balance`
+        : `Move to ${goal?.name ?? "savings"}`
+      : initial
+        ? "Save changes"
+        : type === "income"
+          ? "Add income"
+          : "Add expense";
 
   return (
     <form onSubmit={submit} className="form">
@@ -56,21 +139,52 @@ export function TxForm({ initial, defaultType, onDone }: { initial?: Transaction
         value={type}
         onChange={(t) => {
           setType(t);
-          setCategory(t === "income" ? "Salary" : "Food");
+          if (t !== "transfer") setCategory(t === "income" ? "Salary" : "Food");
         }}
         options={[
           { value: "expense", label: "Expense" },
           { value: "income", label: "Income" },
+          { value: "transfer", label: "Savings" },
         ]}
       />
       <AmountField value={amount} onChange={setAmount} autoFocus={!initial} />
-      <div className="chips">
-        {cats.map((c) => (
-          <button type="button" key={c.name} className={`chip ${category === c.name ? "on" : ""}`} onClick={() => setCategory(c.name)}>
-            <span>{c.emoji}</span> {c.name}
-          </button>
-        ))}
-      </div>
+
+      {type === "transfer" ? (
+        goals.length === 0 ? (
+          <p className="hint">Create a savings goal first (Savings tab → +), then move money into it.</p>
+        ) : (
+          <>
+            <div className="seg-small">
+              <button type="button" className={!withdraw ? "on" : ""} onClick={() => setWithdraw(false)}>
+                Balance → Goal
+              </button>
+              <button type="button" className={withdraw ? "on" : ""} onClick={() => setWithdraw(true)}>
+                Goal → Balance
+              </button>
+            </div>
+            <GoalPicker goals={goals} value={goalId} onChange={setGoalId} txs={transactions} />
+            <p className="small muted center">
+              {withdraw
+                ? `${money(goal ? goalSaved(goal, transactions) : 0)} in ${goal?.name ?? "goal"}`
+                : `Available balance ${money(balance)}`}
+            </p>
+          </>
+        )
+      ) : (
+        <>
+          <div className="chips">
+            {cats.map((c) => (
+              <button type="button" key={c.name} className={`chip ${category === c.name ? "on" : ""}`} onClick={() => setCategory(c.name)}>
+                <span>{c.emoji}</span> {c.name}
+              </button>
+            ))}
+          </div>
+          <Field label="Tags">
+            <TagInput value={tags} onChange={setTags} suggestions={tagSuggestions} />
+          </Field>
+        </>
+      )}
+
       <div className="row2">
         <Field label="Note">
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" maxLength={80} />
@@ -79,9 +193,25 @@ export function TxForm({ initial, defaultType, onDone }: { initial?: Transaction
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
         </Field>
       </div>
+
+      {!initial && type !== "transfer" && (
+        <Field label="Repeat">
+          <select value={repeat} onChange={(e) => setRepeat(e.target.value as typeof repeat)}>
+            <option value="never">Doesn't repeat</option>
+            <option value="weekly">Every week</option>
+            <option value="monthly">Every month</option>
+            <option value="yearly">Every year</option>
+          </select>
+        </Field>
+      )}
+      {initial?.recurringId && <p className="small muted">🔁 Added automatically by a recurring rule. Edits here only change this one.</p>}
+
       {err && <p className="form-error">{err}</p>}
-      <button className={`btn primary ${type === "income" ? "good" : ""}`} disabled={!valid(amount) || busy}>
-        {initial ? "Save changes" : type === "income" ? "Add income" : "Add expense"}
+      <button
+        className={`btn primary ${type === "income" ? "good" : ""}`}
+        disabled={!valid(amount) || busy || (type === "transfer" && !goal)}
+      >
+        {label}
       </button>
       {initial && (
         <button type="button" className="btn danger-ghost" onClick={() => store.remove("transactions", initial.id).then(onDone)}>
@@ -95,7 +225,7 @@ export function TxForm({ initial, defaultType, onDone }: { initial?: Transaction
 const GOAL_EMOJIS = ["🎯", "🏝️", "🚗", "🏠", "💻", "📱", "🎓", "💍", "🛟", "🎁", "✈️", "🏍️"];
 
 export function GoalForm({ initial, onDone }: { initial?: Goal; onDone: () => void }) {
-  const { store } = useData();
+  const { store, transactions } = useData();
   const [name, setName] = useState(initial?.name ?? "");
   const [emoji, setEmoji] = useState(initial?.emoji ?? "🎯");
   const [target, setTarget] = useState(initial ? String(initial.target) : "");
@@ -106,6 +236,18 @@ export function GoalForm({ initial, onDone }: { initial?: Goal; onDone: () => vo
     if (initial) await store.update("goals", initial.id, data);
     else await store.add("goals", { ...data, contributions: [], createdAt: Date.now() });
   }, onDone);
+
+  const remove = async () => {
+    if (!initial) return;
+    const moves = transactions.filter((t) => t.type === "transfer" && t.goalId === initial.id);
+    const fromBalance = moves.reduce((s, t) => s + t.amount, 0);
+    const msg =
+      `Delete "${initial.name}"?` + (fromBalance > 0 ? `\n\n${money(fromBalance)} you moved in from your balance will go back to your balance.` : "");
+    if (!confirm(msg)) return;
+    await Promise.all(moves.map((t) => store.remove("transactions", t.id)));
+    await store.remove("goals", initial.id);
+    onDone();
+  };
 
   return (
     <form onSubmit={submit} className="form">
@@ -132,7 +274,7 @@ export function GoalForm({ initial, onDone }: { initial?: Goal; onDone: () => vo
         {initial ? "Save goal" : "Create goal"}
       </button>
       {initial && (
-        <button type="button" className="btn danger-ghost" onClick={() => confirm(`Delete "${initial.name}"?`) && store.remove("goals", initial.id).then(onDone)}>
+        <button type="button" className="btn danger-ghost" onClick={remove}>
           Delete goal
         </button>
       )}
@@ -140,13 +282,29 @@ export function GoalForm({ initial, onDone }: { initial?: Goal; onDone: () => vo
   );
 }
 
+type SaveMode = "move" | "existing" | "withdraw";
+
 export function ContributeForm({ goal, onDone }: { goal: Goal; onDone: () => void }) {
-  const { store } = useData();
-  const [mode, setMode] = useState<"add" | "withdraw">("add");
+  const { store, transactions } = useData();
+  const [mode, setMode] = useState<SaveMode>("move");
   const [amount, setAmount] = useState("");
+  const saved = goalSaved(goal, transactions);
+  const balance = balanceOf(transactions);
   const { busy, err, submit } = useSubmit(async () => {
-    const amt = parse(amount) * (mode === "withdraw" ? -1 : 1);
-    await store.update("goals", goal.id, { contributions: [...goal.contributions, { amount: amt, date: today() }] });
+    const amt = parse(amount);
+    if (mode === "existing") {
+      await store.update("goals", goal.id, { contributions: [...goal.contributions, { amount: amt, date: today() }] });
+      return;
+    }
+    if (mode === "withdraw" && amt > saved) throw new Error(`Only ${money(saved)} in this goal`);
+    await store.add("transactions", {
+      type: "transfer",
+      amount: mode === "withdraw" ? -amt : amt,
+      category: "Savings",
+      goalId: goal.id,
+      date: today(),
+      createdAt: Date.now(),
+    });
   }, onDone);
   return (
     <form onSubmit={submit} className="form">
@@ -154,15 +312,64 @@ export function ContributeForm({ goal, onDone }: { goal: Goal; onDone: () => voi
         value={mode}
         onChange={setMode}
         options={[
-          { value: "add", label: "Add money" },
+          { value: "move", label: "Move in" },
+          { value: "existing", label: "Add saved" },
           { value: "withdraw", label: "Withdraw" },
         ]}
       />
+      <p className="hint">
+        {mode === "move" && (
+          <>
+            Moves money <b>from your balance</b> ({money(balance)}) into this goal. Shows in Activity as a transfer.
+          </>
+        )}
+        {mode === "existing" && <>Records money you'd <b>already set aside</b> elsewhere. Your balance won't change.</>}
+        {mode === "withdraw" && (
+          <>
+            Takes money out of this goal ({money(saved)}) and <b>back into your balance</b>.
+          </>
+        )}
+      </p>
       <AmountField value={amount} onChange={setAmount} />
       {err && <p className="form-error">{err}</p>}
       <button className="btn primary" disabled={!valid(amount) || busy}>
-        {mode === "add" ? `Save to ${goal.name}` : `Withdraw from ${goal.name}`}
+        {mode === "move" ? `Move to ${goal.name}` : mode === "existing" ? `Add to ${goal.name}` : `Withdraw from ${goal.name}`}
       </button>
+    </form>
+  );
+}
+
+export function BudgetForm({ initial, onDone }: { initial?: Budget; onDone: () => void }) {
+  const { store, budgets } = useData();
+  const taken = new Set(budgets.filter((b) => b.id !== initial?.id).map((b) => b.category));
+  const options = EXPENSE_CATEGORIES.filter((c) => !taken.has(c.name));
+  const [category, setCategory] = useState(initial?.category ?? options[0]?.name ?? "");
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
+  const { busy, err, submit } = useSubmit(async () => {
+    if (initial) await store.update("budgets", initial.id, { category, amount: parse(amount) });
+    else await store.add("budgets", { category, amount: parse(amount), createdAt: Date.now() });
+  }, onDone);
+  if (!options.length && !initial) return <p className="hint">Every category already has a budget.</p>;
+  return (
+    <form onSubmit={submit} className="form">
+      <p className="small muted center">Monthly limit</p>
+      <AmountField value={amount} onChange={setAmount} autoFocus={!initial} />
+      <div className="chips">
+        {options.map((c) => (
+          <button type="button" key={c.name} className={`chip ${category === c.name ? "on" : ""}`} onClick={() => setCategory(c.name)}>
+            <span>{c.emoji}</span> {c.name}
+          </button>
+        ))}
+      </div>
+      {err && <p className="form-error">{err}</p>}
+      <button className="btn primary" disabled={!valid(amount) || !category || busy}>
+        {initial ? "Save budget" : `Set ${category} budget`}
+      </button>
+      {initial && (
+        <button type="button" className="btn danger-ghost" onClick={() => store.remove("budgets", initial.id).then(onDone)}>
+          Remove budget
+        </button>
+      )}
     </form>
   );
 }

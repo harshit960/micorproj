@@ -1,6 +1,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   onSnapshot,
   setDoc,
@@ -8,7 +9,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { CollectionName, Collections } from "./types";
+import { COLLECTIONS, type CollectionName, type Collections } from "./types";
 
 type Item<C extends CollectionName> = Collections[C];
 type Listener<C extends CollectionName> = (items: Item<C>[]) => void;
@@ -17,6 +18,8 @@ export interface Store {
   kind: "local" | "cloud";
   subscribe<C extends CollectionName>(col: C, cb: Listener<C>, onError?: (e: Error) => void): () => void;
   add<C extends CollectionName>(col: C, data: Omit<Item<C>, "id">): Promise<void>;
+  /** Create-or-replace with a caller-chosen id (idempotent: recurring runs, backup restore). */
+  set<C extends CollectionName>(col: C, id: string, data: Omit<Item<C>, "id">): Promise<void>;
   update<C extends CollectionName>(col: C, id: string, data: Partial<Item<C>>): Promise<void>;
   remove(col: CollectionName, id: string): Promise<void>;
 }
@@ -24,7 +27,6 @@ export interface Store {
 export const newId = () =>
   (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/-/g, "");
 
-const COLLECTIONS: CollectionName[] = ["transactions", "goals", "loans"];
 const localKey = (col: CollectionName) => `kosh:${col}`;
 
 function readLocal<C extends CollectionName>(col: C): Item<C>[] {
@@ -67,6 +69,9 @@ export function createLocalStore(): Store {
     async add(col, data) {
       set(col, [...get(col), { ...data, id: newId() } as any]);
     },
+    async set(col, id, data) {
+      set(col, [...get(col).filter((x) => x.id !== id), { ...data, id } as any]);
+    },
     async update(col, id, data) {
       set(col, get(col).map((x) => (x.id === id ? { ...x, ...data } : x)) as any);
     },
@@ -82,7 +87,14 @@ const userCol = (uid: string, col: CollectionName) => collection(db, "kosh_users
 const clean = <T extends object>(o: T) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 
-export function createCloudStore(uid: string): Store {
+export function createCloudStore(uid: string, onWriteError: (e: Error) => void): Store {
+  // Firestore applies writes to its local cache immediately (snapshots update right away) but
+  // only resolves the promise once the server acks — which never happens offline. Don't make
+  // the UI wait for that; surface failures (e.g. rules rejections) through onWriteError.
+  const fire = (p: Promise<unknown>) => {
+    p.catch((e) => onWriteError(e));
+    return Promise.resolve();
+  };
   return {
     kind: "cloud",
     subscribe(col, cb, onError) {
@@ -93,13 +105,18 @@ export function createCloudStore(uid: string): Store {
       );
     },
     async add(col, data) {
-      await setDoc(doc(userCol(uid, col), newId()), clean(data as object));
+      return fire(setDoc(doc(userCol(uid, col), newId()), clean(data as object)));
+    },
+    async set(col, id, data) {
+      return fire(setDoc(doc(userCol(uid, col), id), clean(data as object)));
     },
     async update(col, id, data) {
-      await updateDoc(doc(userCol(uid, col), id), clean(data as object));
+      // An explicit `undefined` means "clear this field".
+      const patch = Object.fromEntries(Object.entries(data as object).map(([k, v]) => [k, v === undefined ? deleteField() : v]));
+      return fire(updateDoc(doc(userCol(uid, col), id), patch));
     },
     async remove(col, id) {
-      await deleteDoc(doc(userCol(uid, col), id));
+      return fire(deleteDoc(doc(userCol(uid, col), id)));
     },
   };
 }

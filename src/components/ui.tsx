@@ -1,4 +1,6 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { normalizeTag } from "../lib/types";
+import { prettyMonth } from "../lib/format";
 
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   useEffect(() => {
@@ -67,7 +69,7 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
   );
 }
 
-export function Progress({ value, tone = "accent" }: { value: number; tone?: "accent" | "good" | "warn" }) {
+export function Progress({ value, tone = "accent" }: { value: number; tone?: "accent" | "good" | "warn" | "bad" }) {
   return (
     <div className="progress">
       <div className={`progress-fill ${tone}`} style={{ width: `${Math.min(100, Math.max(0, value * 100))}%` }} />
@@ -99,6 +101,15 @@ const PATHS: Record<string, string> = {
   down: "M12 5v14M19 12l-7 7-7-7",
   chevron: "M9 6l6 6-6 6",
   download: "M12 4v11M7 10l5 5 5-5M5 20h14",
+  upload: "M12 16V5M7 10l5-5 5 5M5 20h14",
+  chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
+  eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  eyeoff: "M3 3l18 18M10.6 5.1A9.8 9.8 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2",
+  share: "M12 3v12M8 7l4-4 4 4M5 12v8h14v-8",
+  repeat: "M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3",
+  left: "M15 6l-6 6 6 6",
+  arrow: "M5 12h14M13 6l6 6-6 6",
+  tag: "M3 12V3h9l9 9-9 9zM7.5 7.5h.01",
   google: "",
 };
 
@@ -116,5 +127,73 @@ export function Icon({ name, size = 22 }: { name: string; size?: number }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d={PATHS[name]} />
     </svg>
+  );
+}
+
+export function TagInput({ value, onChange, suggestions }: { value: string[]; onChange: (v: string[]) => void; suggestions: string[] }) {
+  const [draft, setDraft] = useState("");
+  const add = (raw: string) => {
+    const t = normalizeTag(raw);
+    if (t && !value.includes(t) && value.length < 8) onChange([...value, t]);
+    setDraft("");
+  };
+  const q = normalizeTag(draft);
+  const matches = suggestions.filter((s) => !value.includes(s) && (!q || s.includes(q))).slice(0, 6);
+  return (
+    <div className="tag-input">
+      <div className="tag-box">
+        {value.map((t) => (
+          <button type="button" key={t} className="tag on" onClick={() => onChange(value.filter((x) => x !== t))} aria-label={`Remove tag ${t}`}>
+            #{t} <span aria-hidden>×</span>
+          </button>
+        ))}
+        <input
+          value={draft}
+          placeholder={value.length ? "" : "Add tags: trip, office…"}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (/[,\s]$/.test(v)) add(v);
+            else setDraft(v);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (draft.trim()) add(draft);
+            } else if (e.key === "Backspace" && !draft && value.length) onChange(value.slice(0, -1));
+          }}
+          onBlur={() => draft.trim() && add(draft)}
+          enterKeyHint="done"
+          aria-label="Tags"
+        />
+      </div>
+      {matches.length > 0 && (
+        <div className="tag-suggest">
+          {matches.map((s) => (
+            <button type="button" key={s} className="tag" onMouseDown={(e) => e.preventDefault()} onClick={() => add(s)}>
+              #{s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function MonthPicker({ value, onChange, max }: { value: string; onChange: (m: string) => void; max: string }) {
+  const shift = (d: number) => {
+    const [y, m] = value.split("-").map(Number);
+    const n = new Date(y, m - 1 + d, 1);
+    onChange(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`);
+  };
+  return (
+    <div className="month-picker">
+      <button className="icon-btn" onClick={() => shift(-1)} aria-label="Previous month">
+        <Icon name="left" size={18} />
+      </button>
+      <strong>{prettyMonth(value)}</strong>
+      <button className="icon-btn" onClick={() => shift(1)} disabled={value >= max} aria-label="Next month">
+        <Icon name="chevron" size={18} />
+      </button>
+    </div>
   );
 }

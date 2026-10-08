@@ -1,6 +1,6 @@
 // Kosh service worker: offline app shell + cached static assets.
 // Firestore/Auth traffic is never cached here — Firestore keeps its own offline cache in IndexedDB.
-const VERSION = "kosh-v1";
+const VERSION = "kosh-v2";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {

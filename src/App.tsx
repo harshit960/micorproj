@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useData } from "./lib/data";
-import { CURRENCIES, getCurrency, setCurrency } from "./lib/format";
 import { usePWA } from "./lib/pwa";
-import { ContributeForm, GoalForm, LoanForm, RepayForm, TxForm } from "./components/forms";
+import { BudgetForm, ContributeForm, GoalForm, LoanForm, RepayForm, TxForm } from "./components/forms";
+import { Settings } from "./components/settings";
 import { Icon, Sheet } from "./components/ui";
-import { ActivityScreen, HomeScreen, LoansScreen, SavingsScreen, type Open, type Tab } from "./screens/screens";
+import { ActivityScreen, HomeScreen, InsightsScreen, LoansScreen, SavingsScreen, type Open, type Tab } from "./screens/screens";
 
 function Welcome() {
   const { signIn, continueAsGuest, error } = useData();
@@ -34,53 +34,6 @@ function Welcome() {
         <p className="small muted center">Guest data stays on this device. Sign in any time to sync it.</p>
         {error && <p className="form-error">{error}</p>}
       </div>
-    </div>
-  );
-}
-
-function Settings({ onDone }: { onDone: () => void }) {
-  const { user, signIn, logOut, store } = useData();
-  const [cur, setCur] = useState(getCurrency());
-  return (
-    <div className="form">
-      <div className="profile">
-        {user?.photoURL ? <img src={user.photoURL} alt="" referrerPolicy="no-referrer" /> : <span className="avatar big">{user?.displayName?.[0] ?? "👤"}</span>}
-        <div>
-          <strong>{user?.displayName ?? "Guest"}</strong>
-          <span className="small muted">{user?.email ?? "Data saved on this device only"}</span>
-        </div>
-      </div>
-      <div className={`sync-pill ${store.kind}`}>{store.kind === "cloud" ? "☁️ Synced to the cloud" : "📱 Stored locally"}</div>
-      <label className="field">
-        <span>Currency</span>
-        <select
-          value={cur}
-          onChange={(e) => {
-            setCurrency(e.target.value);
-            setCur(e.target.value);
-            location.reload();
-          }}
-        >
-          {CURRENCIES.map((c) => (
-            <option key={c.code}>{c.code}</option>
-          ))}
-        </select>
-      </label>
-      <InstallSection />
-      {user ? (
-        <button className="btn ghost" onClick={() => logOut().then(onDone)}>
-          Sign out
-        </button>
-      ) : (
-        <>
-          <button className="btn google" onClick={() => signIn().then(onDone)}>
-            <Icon name="google" /> Sign in to sync
-          </button>
-          <button className="btn ghost" onClick={() => logOut().then(onDone)}>
-            Back to welcome screen
-          </button>
-        </>
-      )}
     </div>
   );
 }
@@ -171,16 +124,18 @@ function UpdateToast() {
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "home", label: "Home", icon: "home" },
   { id: "activity", label: "Activity", icon: "list" },
+  { id: "insights", label: "Insights", icon: "chart" },
   { id: "savings", label: "Savings", icon: "piggy" },
   { id: "loans", label: "Loans", icon: "hand" },
 ];
 
 const TITLES: Record<Open["kind"], (o: Open) => string> = {
-  tx: (o) => (o.item ? "Edit transaction" : "New transaction"),
+  tx: (o) => (o.item ? "Edit transaction" : (o as any).type === "transfer" ? "Move to savings" : "New transaction"),
   goal: (o) => (o.item ? "Edit goal" : "New savings goal"),
   contribute: (o) => `${(o.item as any).emoji} ${(o.item as any).name}`,
   loan: (o) => (o.item ? "Edit record" : "Lend or borrow"),
   repay: () => "Record repayment",
+  budget: (o) => (o.item ? `${(o.item as any).category} budget` : "New monthly budget"),
 };
 
 export default function App() {
@@ -198,6 +153,7 @@ export default function App() {
     const add = params.get("add");
     if (!add) return;
     if (add === "expense" || add === "income") setSheet({ kind: "tx", type: add });
+    else if (add === "savings") setSheet({ kind: "tx", type: "transfer" });
     else if (add === "loan") {
       setTab("loans");
       setSheet({ kind: "loan" });
@@ -216,6 +172,7 @@ export default function App() {
   const fab = () => {
     if (tab === "savings") setSheet({ kind: "goal" });
     else if (tab === "loans") setSheet({ kind: "loan" });
+    else if (tab === "insights") setSheet({ kind: "budget" });
     else setSheet({ kind: "tx" });
   };
 
@@ -241,6 +198,7 @@ export default function App() {
       <main>
         {tab === "home" && <HomeScreen open={setSheet} go={setTab} />}
         {tab === "activity" && <ActivityScreen open={setSheet} />}
+        {tab === "insights" && <InsightsScreen open={setSheet} />}
         {tab === "savings" && <SavingsScreen open={setSheet} />}
         {tab === "loans" && <LoansScreen open={setSheet} />}
       </main>
@@ -259,15 +217,16 @@ export default function App() {
       </nav>
 
       <Sheet open={!!sheet} onClose={close} title={sheet ? TITLES[sheet.kind](sheet) : ""}>
-        {sheet?.kind === "tx" && <TxForm key={sheet.item?.id ?? "new"} initial={sheet.item} defaultType={sheet.type} onDone={close} />}
+        {sheet?.kind === "tx" && <TxForm key={sheet.item?.id ?? "new"} initial={sheet.item} defaultType={sheet.type} defaultGoalId={sheet.goalId} onDone={close} />}
         {sheet?.kind === "goal" && <GoalForm key={sheet.item?.id ?? "new"} initial={sheet.item} onDone={close} />}
         {sheet?.kind === "contribute" && <ContributeForm goal={sheet.item} onDone={close} />}
         {sheet?.kind === "loan" && <LoanForm key={sheet.item?.id ?? "new"} initial={sheet.item} onDone={close} />}
         {sheet?.kind === "repay" && <RepayForm loan={sheet.item} onDone={close} />}
+        {sheet?.kind === "budget" && <BudgetForm key={sheet.item?.id ?? "new"} initial={sheet.item} onDone={close} />}
       </Sheet>
 
       <Sheet open={settings} onClose={closeSettings} title="Account">
-        <Settings onDone={closeSettings} />
+        <Settings onDone={closeSettings} install={<InstallSection />} />
       </Sheet>
     </div>
   );

@@ -1,5 +1,5 @@
 import { monthKey } from "./format";
-import { sum, type Goal, type Transaction } from "./types";
+import { sum, type Frequency, type Goal, type Recurring, type Transaction } from "./types";
 
 /** Spendable balance: income − expenses − money moved into savings. */
 export const balanceOf = (txs: Transaction[]) =>
@@ -46,16 +46,18 @@ export function shiftMonth(key: string, delta: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function addPeriod(date: string, freq: "weekly" | "monthly" | "yearly", anchorDay?: number) {
+export function addPeriod(date: string, freq: Frequency, anchorDay?: number) {
   const [y, m, dd] = date.split("-").map(Number);
   const d = freq === "weekly" ? dd : (anchorDay ?? dd);
   let next: Date;
   if (freq === "weekly") next = new Date(y, m - 1, dd + 7);
-  else if (freq === "monthly") {
+  else {
+    // m is 1-based, so month index `m - 1 + k` is k months later.
     // Clamp to month end; anchorDay keeps Jan 31 → Feb 28 → Mar 31 from drifting to the 28th.
-    const last = new Date(y, m + 1, 0).getDate();
-    next = new Date(y, m, Math.min(d, last));
-  } else next = new Date(y + 1, m - 1, Math.min(d, new Date(y + 1, m, 0).getDate()));
+    const k = freq === "monthly" ? 1 : freq === "quarterly" ? 3 : 12;
+    const last = new Date(y, m - 1 + k + 1, 0).getDate();
+    next = new Date(y, m - 1 + k, Math.min(d, last));
+  }
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
 }
 
@@ -120,4 +122,31 @@ export function goalEta(g: Goal, txs: Transaction[], now: string) {
   if (rate <= 0) return { done: false as const, rate, months: null };
   const months = Math.ceil(left / rate);
   return { done: false as const, rate, months, month: shiftMonth(now.slice(0, 7), months) };
+}
+
+// ---------- recurring ----------
+
+export const PER_MONTH: Record<Frequency, number> = { weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, yearly: 1 / 12 };
+
+/** Average monthly value of a recurring rule (weekly ×4.33, yearly ÷12…). */
+export const monthlyEquivalent = (r: Recurring) => r.amount * PER_MONTH[r.freq];
+
+/** Every occurrence of active rules between `from` and `to` (inclusive), soonest first. */
+export function upcoming(rules: Recurring[], from: string, to: string) {
+  const out: { rule: Recurring; date: string }[] = [];
+  for (const r of rules) {
+    if (!r.active) continue;
+    let d = r.nextDate;
+    for (let i = 0; d <= to && i < 60; i++) {
+      if (d >= from) out.push({ rule: r, date: d });
+      d = addPeriod(d, r.freq, r.anchorDay);
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.rule.type.localeCompare(b.rule.type));
+}
+
+export function addDays(date: string, n: number) {
+  const [y, m, d] = date.split("-").map(Number);
+  const x = new Date(y, m - 1, d + n);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
 }

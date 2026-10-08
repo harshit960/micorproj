@@ -1,8 +1,8 @@
 import { useRef, useState, type ReactNode } from "react";
 import { useData } from "../lib/data";
-import { CURRENCIES, getCurrency, money, prettyDate, setCurrency, today } from "../lib/format";
+import { CURRENCIES, getCurrency, setCurrency, today } from "../lib/format";
 import { usePrefs, type Theme } from "../lib/prefs";
-import { categoryEmoji, COLLECTIONS, type CollectionName } from "../lib/types";
+import { COLLECTIONS, type CollectionName } from "../lib/types";
 import { Icon, Segmented } from "./ui";
 
 async function saveFile(name: string, body: string, type: string) {
@@ -28,43 +28,6 @@ const csvCell = (v: unknown) => {
   const s = v == null ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
-
-const FREQ_LABEL = { weekly: "Every week", monthly: "Every month", yearly: "Every year" };
-
-function RecurringList() {
-  const { recurring, store } = useData();
-  if (!recurring.length)
-    return <p className="hint">No recurring items. Choose “Repeat” when adding an expense or income, such as rent or salary.</p>;
-  return (
-    <div className="rec-list">
-      {[...recurring]
-        .sort((a, b) => a.nextDate.localeCompare(b.nextDate))
-        .map((r) => (
-          <div key={r.id} className={`rec-item ${r.active ? "" : "paused"}`}>
-            <span className={`row-icon ${r.type}`}>{categoryEmoji(r.type, r.category)}</span>
-            <span className="row-main">
-              <span className="row-title">
-                {r.note || r.category} · {money(r.type === "income" ? r.amount : -r.amount, { sign: true })}
-              </span>
-              <span className="row-sub">
-                {FREQ_LABEL[r.freq]} · {r.active ? `next ${prettyDate(r.nextDate)}` : "paused"}
-              </span>
-            </span>
-            <button className="btn tiny ghosty" onClick={() => store.update("recurring", r.id, { active: !r.active })}>
-              {r.active ? "Pause" : "Resume"}
-            </button>
-            <button
-              className="icon-btn small"
-              aria-label="Delete recurring item"
-              onClick={() => confirm("Stop this recurring item? Past entries stay.") && store.remove("recurring", r.id)}
-            >
-              <Icon name="trash" size={15} />
-            </button>
-          </div>
-        ))}
-    </div>
-  );
-}
 
 export function Settings({ onDone, install }: { onDone: () => void; install: ReactNode }) {
   const data = useData();
@@ -161,11 +124,6 @@ export function Settings({ onDone, install }: { onDone: () => void; install: Rea
           ))}
         </select>
       </label>
-
-      <h3 className="settings-h">
-        <Icon name="repeat" size={16} /> Recurring
-      </h3>
-      <RecurringList />
 
       <h3 className="settings-h">Your data</h3>
       <div className="row2">

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useData } from "./lib/data";
 import { usePWA } from "./lib/pwa";
-import { BudgetForm, ContributeForm, GoalForm, LoanForm, RepayForm, TxForm } from "./components/forms";
+import { BudgetForm, ContributeForm, GoalForm, LoanForm, RecurringForm, RepayForm, TxForm } from "./components/forms";
+import { RecurringScreen } from "./screens/recurring";
 import { Settings } from "./components/settings";
 import { Icon, Sheet } from "./components/ui";
 import { ActivityScreen, HomeScreen, InsightsScreen, LoansScreen, SavingsScreen, type Open, type Tab } from "./screens/screens";
@@ -124,6 +125,7 @@ function UpdateToast() {
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "home", label: "Home", icon: "home" },
   { id: "activity", label: "Activity", icon: "list" },
+  { id: "recurring", label: "Recurring", icon: "repeat" },
   { id: "insights", label: "Insights", icon: "chart" },
   { id: "savings", label: "Savings", icon: "piggy" },
   { id: "loans", label: "Loans", icon: "hand" },
@@ -135,6 +137,7 @@ const TITLES: Record<Open["kind"], (o: Open) => string> = {
   contribute: (o) => `${(o.item as any).emoji} ${(o.item as any).name}`,
   loan: (o) => (o.item ? "Edit record" : "Lend or borrow"),
   repay: () => "Record repayment",
+  recurring: (o) => (o.item ? "Edit recurring" : (o as any).preset?.note ? `Add ${(o as any).preset.note}` : "New recurring item"),
   budget: (o) => (o.item ? `${(o.item as any).category} budget` : "New monthly budget"),
 };
 
@@ -173,6 +176,7 @@ export default function App() {
     if (tab === "savings") setSheet({ kind: "goal" });
     else if (tab === "loans") setSheet({ kind: "loan" });
     else if (tab === "insights") setSheet({ kind: "budget" });
+    else if (tab === "recurring") setSheet({ kind: "recurring" });
     else setSheet({ kind: "tx" });
   };
 
@@ -198,6 +202,9 @@ export default function App() {
       <main>
         {tab === "home" && <HomeScreen open={setSheet} go={setTab} />}
         {tab === "activity" && <ActivityScreen open={setSheet} />}
+        {tab === "recurring" && (
+          <RecurringScreen onEdit={(r) => setSheet({ kind: "recurring", item: r })} onAdd={(preset) => setSheet({ kind: "recurring", preset })} />
+        )}
         {tab === "insights" && <InsightsScreen open={setSheet} />}
         {tab === "savings" && <SavingsScreen open={setSheet} />}
         {tab === "loans" && <LoansScreen open={setSheet} />}
@@ -222,6 +229,9 @@ export default function App() {
         {sheet?.kind === "contribute" && <ContributeForm goal={sheet.item} onDone={close} />}
         {sheet?.kind === "loan" && <LoanForm key={sheet.item?.id ?? "new"} initial={sheet.item} onDone={close} />}
         {sheet?.kind === "repay" && <RepayForm loan={sheet.item} onDone={close} />}
+        {sheet?.kind === "recurring" && (
+          <RecurringForm key={sheet.item?.id ?? sheet.preset?.note ?? "new"} initial={sheet.item} preset={sheet.preset} onDone={close} />
+        )}
         {sheet?.kind === "budget" && <BudgetForm key={sheet.item?.id ?? "new"} initial={sheet.item} onDone={close} />}
       </Sheet>
 

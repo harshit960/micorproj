@@ -46,7 +46,7 @@ export interface Loan {
   createdAt: number;
 }
 
-export type Frequency = "weekly" | "monthly" | "yearly";
+export type Frequency = "weekly" | "monthly" | "quarterly" | "yearly";
 
 export interface Recurring {
   id: string;
@@ -92,6 +92,9 @@ export const EXPENSE_CATEGORIES = [
   { name: "Travel", emoji: "✈️" },
   { name: "Education", emoji: "📚" },
   { name: "Subscriptions", emoji: "🔁" },
+  { name: "EMI", emoji: "🏦" },
+  { name: "Insurance", emoji: "🛡️" },
+  { name: "Investments", emoji: "📈" },
   { name: "Gifts", emoji: "🎁" },
   { name: "Other", emoji: "📦" },
 ];
@@ -101,6 +104,7 @@ export const INCOME_CATEGORIES = [
   { name: "Freelance", emoji: "💻" },
   { name: "Business", emoji: "🏪" },
   { name: "Investment", emoji: "📈" },
+  { name: "Rental", emoji: "🏘️" },
   { name: "Refund", emoji: "↩️" },
   { name: "Gift", emoji: "🎁" },
   { name: "Other", emoji: "💰" },

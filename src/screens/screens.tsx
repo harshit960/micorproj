@@ -13,9 +13,11 @@ import {
   type Budget,
   type Goal,
   type Loan,
+  type Recurring,
   type Transaction,
   type TxType,
 } from "../lib/types";
+import type { RecurringPreset } from "../components/forms";
 import { Empty, Icon, MonthPicker, Progress, Segmented } from "../components/ui";
 
 export type Open =
@@ -24,9 +26,10 @@ export type Open =
   | { kind: "contribute"; item: Goal }
   | { kind: "loan"; item?: Loan }
   | { kind: "repay"; item: Loan }
-  | { kind: "budget"; item?: Budget };
+  | { kind: "budget"; item?: Budget }
+  | { kind: "recurring"; item?: Recurring; preset?: RecurringPreset };
 
-export type Tab = "home" | "activity" | "insights" | "savings" | "loans";
+export type Tab = "home" | "activity" | "recurring" | "insights" | "savings" | "loans";
 type Nav = (o: Open) => void;
 
 const catEmoji = (name: string) => EXPENSE_CATEGORIES.find((c) => c.name === name)?.emoji ?? "•";

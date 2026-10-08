@@ -7,7 +7,9 @@ import {
   INCOME_CATEGORIES,
   loanOutstanding,
   type Budget,
+  type FlowType,
   type Frequency,
+  type Recurring,
   type Goal,
   type Loan,
   type LoanDirection,
@@ -200,6 +202,7 @@ export function TxForm({
             <option value="never">Doesn't repeat</option>
             <option value="weekly">Every week</option>
             <option value="monthly">Every month</option>
+            <option value="quarterly">Every 3 months</option>
             <option value="yearly">Every year</option>
           </select>
         </Field>
@@ -458,6 +461,130 @@ export function RepayForm({ loan, onDone }: { loan: Loan; onDone: () => void }) 
       <button className="btn primary good" disabled={!valid(amount) || busy}>
         {loan.direction === "lent" ? "Record money received" : "Record money paid back"}
       </button>
+    </form>
+  );
+}
+
+export const FREQ_LABEL: Record<Frequency, string> = { weekly: "Every week", monthly: "Every month", quarterly: "Every 3 months", yearly: "Every year" };
+
+export type RecurringPreset = Partial<Pick<Recurring, "type" | "amount" | "category" | "note" | "freq">>;
+
+export const RECURRING_TEMPLATES: (RecurringPreset & { emoji: string })[] = [
+  { emoji: "💼", type: "income", category: "Salary", note: "Salary", freq: "monthly" },
+  { emoji: "🏠", type: "expense", category: "Rent", note: "Rent", freq: "monthly" },
+  { emoji: "💡", type: "expense", category: "Bills", note: "Electricity", freq: "monthly" },
+  { emoji: "📶", type: "expense", category: "Bills", note: "Internet / Wi-Fi", freq: "monthly" },
+  { emoji: "📱", type: "expense", category: "Bills", note: "Phone recharge", freq: "monthly" },
+  { emoji: "🎬", type: "expense", category: "Subscriptions", note: "Netflix", freq: "monthly" },
+  { emoji: "🎵", type: "expense", category: "Subscriptions", note: "Spotify", freq: "monthly" },
+  { emoji: "🏦", type: "expense", category: "EMI", note: "Loan EMI", freq: "monthly" },
+  { emoji: "📈", type: "expense", category: "Investments", note: "SIP", freq: "monthly" },
+  { emoji: "🛡️", type: "expense", category: "Insurance", note: "Health insurance", freq: "yearly" },
+  { emoji: "🏋️", type: "expense", category: "Health", note: "Gym", freq: "monthly" },
+  { emoji: "💻", type: "income", category: "Freelance", note: "Freelance retainer", freq: "monthly" },
+];
+
+export function RecurringForm({ initial, preset, onDone }: { initial?: Recurring; preset?: RecurringPreset; onDone: () => void }) {
+  const { store, transactions } = useData();
+  const src = initial ?? preset ?? {};
+  const [type, setType] = useState<FlowType>(src.type ?? "expense");
+  const [amount, setAmount] = useState(src.amount ? String(src.amount) : "");
+  const [name, setName] = useState(src.note ?? "");
+  const [category, setCategory] = useState(src.category ?? (type === "income" ? "Salary" : "Bills"));
+  const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
+  const [freq, setFreq] = useState<Frequency>(src.freq ?? "monthly");
+  const [next, setNext] = useState(initial?.nextDate ?? today());
+  const tagSuggestions = useMemo(() => allTags(transactions), [transactions]);
+  const cats = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const postsNow = next <= today() && (!initial || initial.active);
+
+  const { busy, err, submit } = useSubmit(async () => {
+    const data = {
+      type,
+      amount: parse(amount),
+      category,
+      note: name.trim() || undefined,
+      tags: tags.length ? tags : undefined,
+      freq,
+      nextDate: next,
+      // Keep the original day-of-month (e.g. 31st) unless the user actually moved the date.
+      anchorDay: initial && next === initial.nextDate ? initial.anchorDay : Number(next.slice(8, 10)),
+    };
+    if (initial) await store.update("recurring", initial.id, data);
+    else await store.add("recurring", { ...data, active: true, createdAt: Date.now() });
+  }, onDone);
+
+  return (
+    <form onSubmit={submit} className="form">
+      <Segmented
+        value={type}
+        onChange={(t) => {
+          setType(t);
+          setCategory(t === "income" ? "Salary" : "Bills");
+        }}
+        options={[
+          { value: "expense", label: "Expense / bill" },
+          { value: "income", label: "Income" },
+        ]}
+      />
+      <AmountField value={amount} onChange={setAmount} autoFocus={!initial} />
+      <Field label="Name">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "income" ? "Salary, rent received…" : "Netflix, rent, EMI…"} maxLength={40} />
+      </Field>
+      <div className="chips">
+        {cats.map((c) => (
+          <button type="button" key={c.name} className={`chip ${category === c.name ? "on" : ""}`} onClick={() => setCategory(c.name)}>
+            <span>{c.emoji}</span> {c.name}
+          </button>
+        ))}
+      </div>
+      <div className="row2">
+        <Field label="Repeats">
+          <select value={freq} onChange={(e) => setFreq(e.target.value as Frequency)}>
+            {(Object.keys(FREQ_LABEL) as Frequency[]).map((f) => (
+              <option key={f} value={f}>
+                {FREQ_LABEL[f]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label={initial ? "Next on" : "Starts on"}>
+          <input type="date" value={next} onChange={(e) => setNext(e.target.value)} required />
+        </Field>
+      </div>
+      <Field label="Tags">
+        <TagInput value={tags} onChange={setTags} suggestions={tagSuggestions} />
+      </Field>
+      {postsNow && <p className="hint">Starts today or earlier, so it will be added to Activity right away (once per past date).</p>}
+      {err && <p className="form-error">{err}</p>}
+      <button className={`btn primary ${type === "income" ? "good" : ""}`} disabled={!valid(amount) || busy}>
+        {initial ? "Save changes" : `Add recurring ${type === "income" ? "income" : "expense"}`}
+      </button>
+      {initial && (
+        <div className="row2">
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() =>
+              store.update("recurring", initial.id, { nextDate: addPeriod(initial.nextDate, initial.freq, initial.anchorDay) }).then(onDone)
+            }
+          >
+            Skip next
+          </button>
+          <button type="button" className="btn ghost" onClick={() => store.update("recurring", initial.id, { active: !initial.active }).then(onDone)}>
+            {initial.active ? "Pause" : "Resume"}
+          </button>
+        </div>
+      )}
+      {initial && (
+        <button
+          type="button"
+          className="btn danger-ghost"
+          onClick={() => confirm("Delete this recurring item? Entries already added stay in Activity.") && store.remove("recurring", initial.id).then(onDone)}
+        >
+          Delete
+        </button>
+      )}
     </form>
   );
 }

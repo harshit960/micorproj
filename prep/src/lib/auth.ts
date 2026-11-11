@@ -2,7 +2,9 @@
 export const COOKIE = 'b26_session'
 export const MAX_AGE = 60 * 60 * 24 * 180
 
-export const authEnabled = () => Boolean(process.env.APP_PASSCODE)
+// In production the app is always locked; without APP_PASSCODE nobody can sign in (fail closed).
+export const authEnabled = () => Boolean(process.env.APP_PASSCODE) || process.env.NODE_ENV === 'production'
+export const passcodeSet = () => Boolean(process.env.APP_PASSCODE)
 
 const enc = new TextEncoder()
 
@@ -32,6 +34,7 @@ export async function verifyToken(token: string | undefined) {
 
 export async function checkPasscode(input: string) {
   const want = process.env.APP_PASSCODE ?? ''
+  if (!want) return false
   // compare digests so timing doesn't leak length
   return (await hmac('pass:' + input)) === (await hmac('pass:' + want))
 }

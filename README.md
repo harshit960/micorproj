@@ -1,5 +1,7 @@
 # Kosh — money, savings & loans tracker
 
+> Also in this repo: [`prep/`](prep/README.md), Block 26, a Next.js PWA for a 26-week interview prep plan.
+
 Installable, offline-capable PWA for tracking income/expenses, savings goals and money lent/borrowed.
 
 - **Guest mode** — data stays in `localStorage` on the device.

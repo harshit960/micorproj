@@ -42,19 +42,18 @@ Without `APP_PASSCODE` the app has no login (fine locally, never in production).
 
 1. Create a free MongoDB Atlas cluster. Under Network Access allow `0.0.0.0/0` (Vercel has no fixed
    IPs), create a database user, and copy the connection string.
-2. Generate push keys: `npm run vapid`.
-3. Import this repo in Vercel and set **Root Directory** to `prep`.
-4. Add the environment variables from `.env.example`: `MONGODB_URI`, `APP_PASSCODE`,
-   `SESSION_SECRET`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`,
-   `CRON_SECRET`.
-5. Deploy, open the site on your phone, sign in, and install it (Android: Install app; iPhone: Share,
+2. Import this repo in Vercel and set **Root Directory** to `prep`.
+3. Add two environment variables: `MONGODB_URI` and `APP_PASSCODE`. Everything else in
+   `.env.example` is optional: push keys are generated on first use and stored in MongoDB, and
+   setting `CRON_SECRET` locks the reminder endpoint to callers that know it.
+4. Deploy, open the site on your phone, sign in, and install it (Android: Install app; iPhone: Share,
    then Add to Home Screen). Then Settings, Turn on reminders.
 
 ### Reminder timing
 
 `vercel.json` schedules the reminder job at 08:00 and 21:00 India time, which matches the default
 settings and works on Vercel's free plan. To use other hours, add the repository secrets
-`BLOCK26_URL` and `BLOCK26_CRON_SECRET`; the workflow in `.github/workflows/block26-reminders.yml`
+`BLOCK26_URL` and `BLOCK26_CRON_SECRET` (and set the same value as `CRON_SECRET` in Vercel); the workflow in `.github/workflows/block26-reminders.yml`
 then calls the job every hour. The job is idempotent, so running both is safe: each reminder goes
 out at most once a day.
 

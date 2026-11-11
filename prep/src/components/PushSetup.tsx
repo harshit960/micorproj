@@ -3,8 +3,6 @@
 import { useEffect, useState, useTransition } from 'react'
 import { savePushSubscription, removePushSubscription, sendTestNotification } from '@/app/actions'
 
-const KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ''
-
 function b64ToBytes(b64: string) {
   const pad = '='.repeat((4 - (b64.length % 4)) % 4)
   const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'))
@@ -13,7 +11,7 @@ function b64ToBytes(b64: string) {
 
 type State = 'loading' | 'unsupported' | 'ios-install' | 'denied' | 'off' | 'on'
 
-export function PushSetup() {
+export function PushSetup({ publicKey }: { publicKey: string }) {
   const [state, setState] = useState<State>('loading')
   const [msg, setMsg] = useState<{ text: string; error?: boolean }>({ text: '' })
   const [pending, start] = useTransition()
@@ -28,7 +26,13 @@ export function PushSetup() {
       }
       if (Notification.permission === 'denied') return setState('denied')
       const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' })
-      const sub = await reg.pushManager.getSubscription()
+      let sub = await reg.pushManager.getSubscription()
+      // Keys changed on the server: drop the stale subscription so the user can re-subscribe.
+      const key = sub?.options.applicationServerKey
+      if (sub && key && btoa(String.fromCharCode(...new Uint8Array(key))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') !== publicKey) {
+        await sub.unsubscribe()
+        sub = null
+      }
       setState(sub ? 'on' : 'off')
     })().catch(() => setState('unsupported'))
   }, [])
@@ -36,14 +40,13 @@ export function PushSetup() {
   function enable() {
     start(async () => {
       try {
-        if (!KEY) throw new Error('Push keys are missing on the server. Set NEXT_PUBLIC_VAPID_PUBLIC_KEY and redeploy.')
         const perm = await Notification.requestPermission()
         if (perm !== 'granted') {
           setState(perm === 'denied' ? 'denied' : 'off')
           return
         }
         const reg = await navigator.serviceWorker.ready
-        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(KEY) })
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) })
         await savePushSubscription(JSON.parse(JSON.stringify(sub)), navigator.userAgent)
         setState('on')
         setMsg({ text: 'Reminders are on for this device.' })

@@ -1,27 +1,36 @@
 import 'server-only'
 import * as webpush from 'web-push'
-import { cols } from './db'
+import { cols, db } from './db'
 
-export const pushConfigured = () =>
-  Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY)
+interface Keys { publicKey: string; privateKey: string }
 
-let ready = false
-function init() {
-  if (ready) return
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:reminders@example.com',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!,
-  )
-  ready = true
+/**
+ * VAPID keys come from the environment when set; otherwise they're generated once and kept in
+ * MongoDB, so push works with zero configuration. Changing keys invalidates existing subscriptions.
+ */
+export async function vapidKeys(): Promise<Keys> {
+  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  const priv = process.env.VAPID_PRIVATE_KEY
+  if (pub && priv) return { publicKey: pub, privateKey: priv }
+  const config = (await db()).collection<{ _id: string } & Keys>('config')
+  const found = await config.findOne({ _id: 'vapid' })
+  if (found) return { publicKey: found.publicKey, privateKey: found.privateKey }
+  const fresh = webpush.generateVAPIDKeys()
+  await config.updateOne({ _id: 'vapid' }, { $setOnInsert: fresh }, { upsert: true })
+  const saved = (await config.findOne({ _id: 'vapid' }))!
+  return { publicKey: saved.publicKey, privateKey: saved.privateKey }
+}
+
+export async function vapidPublicKey() {
+  return (await vapidKeys()).publicKey
 }
 
 export interface PushPayload { title: string; body: string; url?: string; tag?: string }
 
 /** Sends to every saved device. Returns how many devices accepted it. Dead subscriptions are removed. */
 export async function pushAll(payload: PushPayload) {
-  if (!pushConfigured()) return { sent: 0, failed: 0, devices: 0 }
-  init()
+  const keys = await vapidKeys()
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:reminders@example.com', keys.publicKey, keys.privateKey)
   const c = await cols()
   const subs = await c.push.find({}).toArray()
   let sent = 0

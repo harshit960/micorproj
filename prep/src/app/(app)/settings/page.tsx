@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { getSettings, clock } from '@/lib/store'
 import { authEnabled } from '@/lib/auth'
-import { pushConfigured } from '@/lib/push'
+import { vapidPublicKey } from '@/lib/push'
 import { shiftPlan, signOut } from '@/app/actions'
 import { fmtDate } from '@/lib/time'
 import { SettingsForm } from '@/components/SettingsForm'
@@ -24,16 +24,9 @@ export default async function SettingsPage() {
         <div className="section-head">
           <h2 className="h2">Reminders</h2>
         </div>
-        {pushConfigured() ? (
-          <div style={{ marginTop: 14 }}>
-            <PushSetup />
-          </div>
-        ) : (
-          <p className="small" style={{ marginTop: 14 }}>
-            Push keys aren&apos;t set on the server yet. Run <code>npm run vapid</code>, add the keys to your environment and
-            redeploy.
-          </p>
-        )}
+        <div style={{ marginTop: 14 }}>
+          <PushSetup publicKey={await vapidPublicKey()} />
+        </div>
       </section>
 
       <section className="section">

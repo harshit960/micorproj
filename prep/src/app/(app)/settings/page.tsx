@@ -7,6 +7,7 @@ import { fmtDate } from '@/lib/time'
 import { SettingsForm } from '@/components/SettingsForm'
 import { PushSetup } from '@/components/PushSetup'
 import { InstallButton } from '@/components/InstallButton'
+import { ThemeSetting } from '@/components/ThemeToggle'
 
 export const metadata: Metadata = { title: 'Settings' }
 
@@ -19,6 +20,15 @@ export default async function SettingsPage() {
       <p className="lede">
         {c.started ? `You're on day ${c.todayN}.` : `Day 1 is ${fmtDate(s.startDate, { weekday: 'long', day: 'numeric', month: 'long' })}.`}
       </p>
+
+      <section className="section">
+        <div className="section-head">
+          <h2 className="h2">Appearance</h2>
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <ThemeSetting />
+        </div>
+      </section>
 
       <section className="section">
         <div className="section-head">

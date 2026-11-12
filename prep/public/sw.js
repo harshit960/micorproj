@@ -1,5 +1,5 @@
 /* Block 26 service worker: offline shell, push reminders. */
-const VERSION = 'b26-v1'
+const VERSION = 'b26-v2'
 const PAGES = `${VERSION}-pages`
 const ASSETS = `${VERSION}-assets`
 

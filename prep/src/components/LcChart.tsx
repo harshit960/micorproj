@@ -64,7 +64,7 @@ export function LcChart({ points, baseline }: { points: Pt[]; baseline: number }
             </text>
           </g>
         )}
-        <path d={path} fill="none" stroke="var(--t-dsa)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={path} fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         <text x={PAD.l} y={H - 6} fontSize="12" fill="var(--muted)">
           {fmt(points[0].date)}
         </text>
@@ -74,7 +74,7 @@ export function LcChart({ points, baseline }: { points: Pt[]; baseline: number }
         {hp && (
           <g>
             <line x1={x(hp.date)} x2={x(hp.date)} y1={PAD.t} y2={H - PAD.b} stroke="var(--line-2)" />
-            <circle cx={x(hp.date)} cy={y(hp.total)} r="5" fill="var(--t-dsa)" stroke="var(--paper)" strokeWidth="2" />
+            <circle cx={x(hp.date)} cy={y(hp.total)} r="5" fill="var(--ink)" stroke="var(--paper)" strokeWidth="2" />
           </g>
         )}
       </svg>

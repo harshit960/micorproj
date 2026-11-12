@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { Archivo } from 'next/font/google'
+import { cookies } from 'next/headers'
 import { hasDb } from '@/lib/db'
+import { THEME_BG, THEME_COOKIE, parseTheme } from '@/lib/theme'
 import { SwRegister } from '@/components/SwRegister'
 import './globals.css'
 
@@ -16,19 +18,26 @@ export const metadata: Metadata = {
   icons: { icon: '/icon.svg', apple: '/icons/apple-touch-icon.png' },
 }
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  viewportFit: 'cover',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f3f5f8' },
-    { media: '(prefers-color-scheme: dark)', color: '#0e1420' },
-  ],
+export async function generateViewport(): Promise<Viewport> {
+  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value)
+  return {
+    width: 'device-width',
+    initialScale: 1,
+    viewportFit: 'cover',
+    themeColor:
+      theme === 'system'
+        ? [
+            { media: '(prefers-color-scheme: light)', color: THEME_BG.light },
+            { media: '(prefers-color-scheme: dark)', color: THEME_BG.dark },
+          ]
+        : THEME_BG[theme],
+  }
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value)
   return (
-    <html lang="en" className={archivo.variable}>
+    <html lang="en" className={archivo.variable} data-theme={theme === 'system' ? undefined : theme} suppressHydrationWarning>
       <body>
         {hasDb() ? children : <SetupNeeded />}
         <SwRegister />

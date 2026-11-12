@@ -131,7 +131,7 @@ export default async function ProgressPage() {
             const v = stats.tracks.find((x) => x.id === t.id)
             if (!v) return null
             return (
-              <li key={t.id} style={{ ['--tc' as string]: `var(--t-${t.id})` }}>
+              <li key={t.id}>
                 <span className="track" data-t={t.id}>
                   {t.name}
                 </span>

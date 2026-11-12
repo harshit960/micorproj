@@ -1,26 +1,72 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { plan, WEEKS, WEEKDAYS, getDay } from '@/lib/plan'
+import { plan, WEEKS, WEEKDAYS, getDay, TRACKS, DAYS, type Track } from '@/lib/plan'
 import { getSettings, clock, getAllDays, computeStats, dateForDay } from '@/lib/store'
 import { fmtDate } from '@/lib/time'
+import { TopicList, type TopicItem } from '@/components/TopicList'
 
 export const metadata: Metadata = { title: 'Plan' }
 
 const level = (f: number) => (f <= 0 ? 0 : f < 0.34 ? 1 : f < 0.67 ? 2 : f < 1 ? 3 : 4)
 
-export default async function PlanPage() {
+const TOPICS = TRACKS.filter((t) => t.id !== 'review')
+
+export default async function PlanPage(props: PageProps<'/plan'>) {
+  const sp = await props.searchParams
+  const topic = TOPICS.find((t) => t.id === sp.topic)
   const s = await getSettings()
   const c = clock(s)
-  const stats = computeStats(await getAllDays(), c.todayN, c.started)
+  const days = await getAllDays()
+  const stats = computeStats(days, c.todayN, c.started)
   const currentWeek = getDay(c.todayN)!.week
+
+  const chips = (
+    <nav className="chips" aria-label="Study by topic">
+      <Link className="chip" href="/plan" aria-current={!topic}>
+        By week
+      </Link>
+      {TOPICS.map((t) => (
+        <Link key={t.id} className="chip" href={`/plan?topic=${t.id}`} aria-current={topic?.id === t.id}>
+          {t.short}
+        </Link>
+      ))}
+    </nav>
+  )
+
+  if (topic) {
+    const items: TopicItem[] = DAYS.flatMap((d) => {
+      const set = new Set(days.get(d.n)?.done ?? [])
+      return d.tasks
+        .filter((t) => t.track === (topic.id as Track) && !t.optional)
+        .map((t) => ({
+          task: t,
+          day: d.n,
+          week: d.week,
+          weekTheme: WEEKS[d.week - 1].theme,
+          dateLabel: fmtDate(dateForDay(s.startDate, d.n), { day: 'numeric', month: 'short' }),
+          done: set.has(t.id),
+        }))
+    })
+    return (
+      <>
+        <h1 className="display">Plan</h1>
+        <p className="lede">
+          {topic.name}, in plan order. Pick whatever fits your mood today; ticking it here counts on its day too.
+        </p>
+        {chips}
+        <TopicList key={topic.id} items={items} trackName={topic.short} />
+      </>
+    )
+  }
 
   return (
     <>
       <h1 className="display">Plan</h1>
       <p className="lede">
         26 weeks from {fmtDate(s.startDate, { day: 'numeric', month: 'long', year: 'numeric' })}. Weekdays take about two
-        hours, weekends are for deep dives and the Sunday contest.
+        hours, weekends are for deep dives and the Sunday contest. Or study by topic:
       </p>
+      {chips}
 
       {plan.phases.map((p) => (
         <section key={p.id} className="phase">

@@ -1,0 +1,26 @@
+# Optional: lets Block 26 (prep/) send reminders at any hour you pick in Settings.
+# Vercel's free cron only runs twice a day. Add two repository secrets to enable:
+#   BLOCK26_URL          e.g. https://your-app.vercel.app
+#   BLOCK26_CRON_SECRET  same value as CRON_SECRET in Vercel
+name: Block 26 reminders
+
+on:
+  schedule:
+    - cron: '2 * * * *'
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Trigger reminder check
+        env:
+          URL: ${{ secrets.BLOCK26_URL }}
+          SECRET: ${{ secrets.BLOCK26_CRON_SECRET }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
+            echo "BLOCK26_URL / BLOCK26_CRON_SECRET not set; skipping."
+            exit 0
+          fi
+          curl -fsS --max-time 60 -H "Authorization: Bearer $SECRET" "$URL/api/cron/remind"

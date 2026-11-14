@@ -1,23 +1,52 @@
 import 'server-only'
 import { cols, type DayDoc, type SettingsDoc } from './db'
 import { todayIn, mondayOnOrAfter, diffDays, addDays } from './time'
-import { DAYS, TOTAL_DAYS, WEEKS, getDay, required, type Track } from './plan'
+import { DAYS, TOTAL_DAYS, WEEKS, getDay, required, plan, type Track } from './plan'
+import migrateV1 from '@/data/migrate-v1.json'
 
 export const DEFAULT_TZ = 'Asia/Kolkata'
 
 export async function getSettings(): Promise<SettingsDoc> {
   const c = await cols()
   const found = await c.settings.findOne({ _id: 'me' })
-  if (found) return found
+  if (found) {
+    if ((found.planVersion ?? 1) < plan.version) await migrateProgress(found.planVersion ?? 1)
+    return found
+  }
   const doc: SettingsDoc = {
     _id: 'me',
     startDate: mondayOnOrAfter(todayIn(DEFAULT_TZ)),
     tz: DEFAULT_TZ,
     leetcode: 'user4397ON',
     reminders: { morning: 8, evening: 21 },
+    planVersion: plan.version,
   }
   await c.settings.updateOne({ _id: 'me' }, { $setOnInsert: doc }, { upsert: true })
   return (await c.settings.findOne({ _id: 'me' }))!
+}
+
+const V1_ID = /^d\d+-\d+$/
+
+/**
+ * Carries checked tasks over when the plan's content changes. v1 task ids were positional
+ * (`d12-3`); v2 ids are content keys (`d12-p-two-sum`), so a v1 id is either mapped to the same
+ * task on the same day or dropped. Safe to run twice: v2 ids are left alone.
+ */
+async function migrateProgress(from: number) {
+  const c = await cols()
+  const claim = await c.settings.updateOne(
+    { _id: 'me', $or: [{ planVersion: { $exists: false } }, { planVersion: { $lt: plan.version } }] },
+    { $set: { planVersion: plan.version } },
+  )
+  if (!claim.modifiedCount || from >= 2) return
+  const map = migrateV1 as Record<string, string>
+  const docs = await c.days.find({}).toArray()
+  for (const d of docs) {
+    const done = [...new Set(d.done.flatMap((id) => (V1_ID.test(id) ? (map[id] ? [map[id]] : []) : [id])))]
+    const day = getDay(d._id)
+    const complete = day ? required(day).every((t) => done.includes(t.id)) : false
+    await c.days.updateOne({ _id: d._id }, complete ? { $set: { done } } : { $set: { done }, $unset: { completedAt: '' } })
+  }
 }
 
 /** Plan day number for a date (1-based, may be < 1 before the start or > TOTAL_DAYS after). */

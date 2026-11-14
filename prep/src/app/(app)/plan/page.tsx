@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Plan' }
 
 const level = (f: number) => (f <= 0 ? 0 : f < 0.34 ? 1 : f < 0.67 ? 2 : f < 1 ? 3 : 4)
 
-const TOPICS = TRACKS.filter((t) => t.id !== 'review')
+const TOPICS = TRACKS.filter((t) => t.id !== 'review' && t.id !== 'contest')
 
 export default async function PlanPage(props: PageProps<'/plan'>) {
   const sp = await props.searchParams
@@ -64,7 +64,7 @@ export default async function PlanPage(props: PageProps<'/plan'>) {
       <h1 className="display">Plan</h1>
       <p className="lede">
         26 weeks from {fmtDate(s.startDate, { day: 'numeric', month: 'long', year: 'numeric' })}. Weekdays take about two
-        hours, weekends are for deep dives and the Sunday contest. Or study by topic:
+        hours; Saturdays are deep dives and Sundays are a hands-on lab. Or study by topic:
       </p>
       {chips}
 

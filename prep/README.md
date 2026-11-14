@@ -16,13 +16,13 @@ startup to product MNCs and unicorns. Progress, logs and materials live in Mongo
 
 ## The plan
 
-`src/data/plan.json` (version 2) holds 182 days aimed at backend/platform roles and forward deployed
+`src/data/plan.json` (version 3) holds 182 days aimed at backend/platform roles and forward deployed
 engineer (FDE) roles:
 
 - **DSA:** 290 free LeetCode problems (slugs and difficulty verified), weighted toward the starting
   gaps: graphs, union-find, tries, DP and about 80 hard problems. Contests are optional.
 - **Backend:** Postgres internals, isolation and locking, Kafka, Redis, idempotency, retries,
-  sagas, OAuth/OIDC, and a Friday read through *Designing Data-Intensive Applications* (weeks 7–18).
+  sagas, OAuth/OIDC, and a Friday chapter video of *Designing Data-Intensive Applications* (weeks 7–18).
 - **Infra:** a Sunday lab every week that grows one service: Docker, AWS (IAM, VPC, ECS Fargate,
   RDS, SQS/Lambda), Kubernetes (kind, probes, Helm, EKS), Terraform, GitHub Actions with OIDC,
   Prometheus/Grafana, load testing and an incident drill.
@@ -42,7 +42,11 @@ Saturdays carry a deep dive or a timed mock; Sundays are the lab plus a weekly r
 always starts on a Monday. If you fall behind, Settings can push the whole plan back a week.
 
 When the plan's content changes, `plan.version` goes up and existing progress is migrated on the
-next load (`src/data/migrate-v1.json` maps v1 task ids to v2), so checked tasks carry over.
+next load (`src/data/migrate-v1.json` maps v1 task ids to v2, `migrate-v2.json` maps v2 to v3), so
+checked tasks carry over.
+
+Learning items are videos wherever a good one exists (130 in all, each checked for embedding); the
+original article stays on the task as an optional "Also read" link.
 
 ## Run locally
 

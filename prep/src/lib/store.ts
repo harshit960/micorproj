@@ -3,6 +3,7 @@ import { cols, type DayDoc, type SettingsDoc } from './db'
 import { todayIn, mondayOnOrAfter, diffDays, addDays } from './time'
 import { DAYS, TOTAL_DAYS, WEEKS, getDay, required, plan, type Track } from './plan'
 import migrateV1 from '@/data/migrate-v1.json'
+import migrateV2 from '@/data/migrate-v2.json'
 
 export const DEFAULT_TZ = 'Asia/Kolkata'
 
@@ -28,9 +29,10 @@ export async function getSettings(): Promise<SettingsDoc> {
 const V1_ID = /^d\d+-\d+$/
 
 /**
- * Carries checked tasks over when the plan's content changes. v1 task ids were positional
- * (`d12-3`); v2 ids are content keys (`d12-p-two-sum`), so a v1 id is either mapped to the same
- * task on the same day or dropped. Safe to run twice: v2 ids are left alone.
+ * Carries checked tasks over when the plan's content changes, one version step at a time.
+ * - v1 -> v2: v1 ids were positional (`d12-3`); each maps to the same task on the same day or is dropped.
+ * - v2 -> v3: reading tasks became videos; their ids are renamed, every other id is unchanged.
+ * Safe to run twice: each step only touches ids from the version it migrates from.
  */
 async function migrateProgress(from: number) {
   const c = await cols()
@@ -38,11 +40,16 @@ async function migrateProgress(from: number) {
     { _id: 'me', $or: [{ planVersion: { $exists: false } }, { planVersion: { $lt: plan.version } }] },
     { $set: { planVersion: plan.version } },
   )
-  if (!claim.modifiedCount || from >= 2) return
-  const map = migrateV1 as Record<string, string>
+  if (!claim.modifiedCount) return
+  const v1 = migrateV1 as Record<string, string>
+  const v2 = migrateV2 as Record<string, string>
   const docs = await c.days.find({}).toArray()
   for (const d of docs) {
-    const done = [...new Set(d.done.flatMap((id) => (V1_ID.test(id) ? (map[id] ? [map[id]] : []) : [id])))]
+    let ids = d.done
+    if (from < 2) ids = ids.flatMap((id) => (V1_ID.test(id) ? (v1[id] ? [v1[id]] : []) : [id]))
+    if (from < 3) ids = ids.map((id) => v2[id] ?? id)
+    const done = [...new Set(ids)]
+    if (done.length === d.done.length && done.every((id, i) => id === d.done[i])) continue
     const day = getDay(d._id)
     const complete = day ? required(day).every((t) => done.includes(t.id)) : false
     await c.days.updateOne({ _id: d._id }, complete ? { $set: { done } } : { $set: { done }, $unset: { completedAt: '' } })

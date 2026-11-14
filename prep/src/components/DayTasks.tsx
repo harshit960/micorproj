@@ -144,7 +144,7 @@ export function DayTasks({ n, tasks, initialDone, initialRevisit }: { n: number;
                   {t.note && <p className="task-note">{t.note}</p>}
                   {t.extra && (
                     <a className="extra-link" href={t.extra} target="_blank" rel="noreferrer">
-                      Also read: {new URL(t.extra).hostname.replace(/^www\./, '')}
+                      {/youtube\.com|youtu\.be/.test(t.extra) ? 'Also watch' : 'Also read'}: {new URL(t.extra).hostname.replace(/^www\./, '')}
                     </a>
                   )}
                 </div>

@@ -21,6 +21,8 @@ export interface SettingsDoc {
   tz: string
   leetcode: string
   reminders: { morning: number; evening: number }
+  /** Plan version this user's progress was last migrated to. Missing means 1. */
+  planVersion?: number
 }
 export interface DayDoc {
   _id: number

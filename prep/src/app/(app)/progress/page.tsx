@@ -103,9 +103,8 @@ export default async function ProgressPage() {
               </div>
             </div>
             <p className="small muted">
-              Contest rating {lc.rating ?? 'not rated yet'} from {lc.contests} {lc.contests === 1 ? 'contest' : 'contests'}. You
-              started at {base.total} solved ({base.hard} hard) and {base.contests} contest. Aim for 500+ with 40+ hard and a
-              rating above 1800.
+              You started at {base.total} solved with {base.hard} hard. The plan takes you past 500,
+              with about 80 hard along the way. That is the depth backend and FDE loops at product companies expect. Contests are optional.
             </p>
           </>
         ) : (

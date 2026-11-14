@@ -1,6 +1,6 @@
 import raw from '@/data/plan.json'
 
-export type Track = 'dsa' | 'lld' | 'hld' | 'cs' | 'backend' | 'career' | 'contest' | 'review'
+export type Track = 'dsa' | 'backend' | 'infra' | 'hld' | 'lld' | 'fde' | 'cs' | 'career' | 'contest' | 'review'
 export type TaskKind = 'problem' | 'video' | 'read' | 'practice' | 'contest'
 
 export interface Task {
@@ -55,10 +55,12 @@ export function required(day: Day): Task[] {
 
 export const TRACKS: { id: Track; name: string; short: string }[] = [
   { id: 'dsa', name: 'Problem solving', short: 'DSA' },
-  { id: 'lld', name: 'Low-level design', short: 'LLD' },
-  { id: 'hld', name: 'System design', short: 'HLD' },
-  { id: 'cs', name: 'CS fundamentals', short: 'CS' },
   { id: 'backend', name: 'Backend depth', short: 'Backend' },
+  { id: 'infra', name: 'Cloud and infra', short: 'Infra' },
+  { id: 'hld', name: 'System design', short: 'HLD' },
+  { id: 'lld', name: 'Low-level design', short: 'LLD' },
+  { id: 'fde', name: 'Forward deployed', short: 'FDE' },
+  { id: 'cs', name: 'CS fundamentals', short: 'CS' },
   { id: 'career', name: 'Resume and interviews', short: 'Career' },
   { id: 'contest', name: 'Contests', short: 'Contest' },
   { id: 'review', name: 'Review', short: 'Review' },

@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from 'react'
 import type { Task } from '@/lib/plan'
 import { toggleTask } from '@/app/actions'
 import { VideoEmbed } from './VideoEmbed'
+import { useHandheld, youtubeAppHref } from './handheld'
 
 export interface TopicItem {
   task: Task
@@ -22,6 +23,8 @@ export function TopicList({ items, trackName }: { items: TopicItem[]; trackName:
   const [done, setDone] = useState(() => new Set(items.filter((i) => i.done).map((i) => i.task.id)))
   const [hideDone, setHideDone] = useState(true)
   const [open, setOpen] = useState<string | null>(null)
+  // Phones and iPads open videos in the YouTube app instead of the inline player.
+  const handheld = useHandheld()
   const [error, setError] = useState('')
   const [, start] = useTransition()
 
@@ -100,7 +103,7 @@ export function TopicList({ items, trackName }: { items: TopicItem[]; trackName:
             {rows.map((it) => {
               const t = it.task
               const isDone = done.has(t.id)
-              const isOpen = open === t.id
+              const isOpen = !handheld && open === t.id
               return (
                 <li key={t.id} className={`task${isDone ? ' is-done' : ''}`}>
                   <div className="task-row">
@@ -119,7 +122,11 @@ export function TopicList({ items, trackName }: { items: TopicItem[]; trackName:
                       </span>
                     </button>
                     <div className="task-main">
-                      {t.kind === 'video' ? (
+                      {t.kind === 'video' && handheld && t.videoId ? (
+                        <a className="task-title" href={youtubeAppHref(t.videoId, handheld)} target="_blank" rel="noreferrer">
+                          {t.title}
+                        </a>
+                      ) : t.kind === 'video' ? (
                         <button
                           type="button"
                           className="task-title"
@@ -152,7 +159,21 @@ export function TopicList({ items, trackName }: { items: TopicItem[]; trackName:
                       {t.note && <p className="task-note">{t.note}</p>}
                     </div>
                     <div className="task-side">
-                      {t.kind === 'video' && (
+                      {t.kind === 'video' && handheld && t.videoId && (
+                        <a
+                          className="icon-btn"
+                          href={youtubeAppHref(t.videoId, handheld)}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`Open "${t.title}" in YouTube`}
+                          title="Open in YouTube"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+                          </svg>
+                        </a>
+                      )}
+                      {t.kind === 'video' && !handheld && (
                         <button
                           type="button"
                           className="icon-btn"

@@ -6,6 +6,7 @@ import type { Task } from '@/lib/plan'
 import { trackName } from '@/lib/plan'
 import { toggleTask, setRevisit } from '@/app/actions'
 import { VideoEmbed } from './VideoEmbed'
+import { useHandheld, youtubeAppHref } from './handheld'
 
 const fmtMin = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`)
 
@@ -17,6 +18,9 @@ export function DayTasks({ n, tasks, initialDone, initialRevisit }: { n: number;
   )
   const [error, setError] = useState('')
   const [, start] = useTransition()
+  // Phones and iPads open videos in the YouTube app instead of the inline player.
+  const handheld = useHandheld()
+  const shown = handheld ? null : open
 
   const req = tasks.filter((t) => !t.optional)
   const doneCount = req.filter((t) => done.has(t.id)).length
@@ -115,7 +119,11 @@ export function DayTasks({ n, tasks, initialDone, initialRevisit }: { n: number;
                   </span>
                 </button>
                 <div className="task-main">
-                  {t.kind === 'video' ? (
+                  {t.kind === 'video' && handheld && t.videoId ? (
+                    <a className="task-title" href={youtubeAppHref(t.videoId, handheld)} target="_blank" rel="noreferrer">
+                      {t.title}
+                    </a>
+                  ) : t.kind === 'video' ? (
                     <button
                       type="button"
                       className="task-title"
@@ -149,7 +157,21 @@ export function DayTasks({ n, tasks, initialDone, initialRevisit }: { n: number;
                   )}
                 </div>
                 <div className="task-side">
-                  {t.kind === 'video' && (
+                  {t.kind === 'video' && handheld && t.videoId && (
+                    <a
+                      className="icon-btn"
+                      href={youtubeAppHref(t.videoId, handheld)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open "${t.title}" in YouTube`}
+                      title="Open in YouTube"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+                      </svg>
+                    </a>
+                  )}
+                  {t.kind === 'video' && !handheld && (
                     <button
                       type="button"
                       className="icon-btn"
@@ -178,7 +200,7 @@ export function DayTasks({ n, tasks, initialDone, initialRevisit }: { n: number;
                   )}
                 </div>
               </div>
-              {t.kind === 'video' && open === t.id && t.videoId && (
+              {t.kind === 'video' && shown === t.id && t.videoId && (
                 <VideoEmbed id={t.videoId} title={t.videoTitle ?? t.title} channel={t.channel} duration={t.duration} />
               )}
             </li>
